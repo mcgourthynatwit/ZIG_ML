@@ -49,6 +49,7 @@ fn readCsv(allocator: std.mem.Allocator) ![]ColumnDataPoint {
     return data.toOwnedSlice();
 }
 
+// Returns an [n x 1] array holdings the features for each input
 fn getY(allocator: std.mem.Allocator, data: []ColumnDataPoint) ![]u8 {
     const length = data.len;
     var Y = try allocator.alloc(u8, length);
@@ -60,6 +61,25 @@ fn getY(allocator: std.mem.Allocator, data: []ColumnDataPoint) ![]u8 {
     return Y;
 }
 
+fn transpose(allocator: std.mem.Allocator, data: []ColumnDataPoint) ![][]u8 {
+    const num_cols = data.len; // Number of images (42000)
+    const num_rows = data[0].pixels.len; // Number of pixels per image (784)
+
+    // Allocate space for cols(train samples)
+    const transposed_data = try allocator.alloc([]u8, num_cols);
+    errdefer allocator.free(transposed_data);
+
+    // Loop and fill each col with 784 rows(pixels for sample)
+    for (transposed_data, 0..) |*col, i| {
+        col.* = try allocator.alloc(u8, num_rows);
+        errdefer allocator.free(col.*);
+
+        // Copy the pixels
+        @memcpy(col.*, &data[i].pixels);
+    }
+
+    return transposed_data;
+}
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -72,5 +92,12 @@ pub fn main() !void {
     defer allocator.free(data);
     defer allocator.free(Y);
 
-    std.debug.print("{any}", .{Y[0]});
+    const transposed = try transpose(allocator, data);
+
+    defer {
+        for (transposed) |row| {
+            allocator.free(row);
+        }
+        allocator.free(transposed);
+    }
 }
