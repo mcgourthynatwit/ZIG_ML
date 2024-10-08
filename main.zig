@@ -49,13 +49,28 @@ fn readCsv(allocator: std.mem.Allocator) ![]ColumnDataPoint {
     return data.toOwnedSlice();
 }
 
+fn getY(allocator: std.mem.Allocator, data: []ColumnDataPoint) ![]u8 {
+    const length = data.len;
+    var Y = try allocator.alloc(u8, length);
+
+    for (data, 0..) |datapoint, i| {
+        Y[i] = datapoint.label;
+    }
+
+    return Y;
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     const data = try readCsv(allocator);
-    defer allocator.free(data);
 
-    std.debug.print("Read {} data points\n", .{data.len});
+    const Y = try getY(allocator, data);
+
+    defer allocator.free(data);
+    defer allocator.free(Y);
+
+    std.debug.print("{any}", .{Y[0]});
 }
