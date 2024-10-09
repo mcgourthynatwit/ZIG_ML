@@ -109,13 +109,42 @@ fn initNN(allocator: std.mem.Allocator) !struct { W1: [][]f32, W2: [][]f32, B1: 
     return .{ .W1 = W1, .W2 = W2, .B1 = B1, .B2 = B2 };
 }
 
+fn ReLu(Z: u8) u8 {
+    if (Z > 0) {
+        return Z;
+    }
+
+    return 0;
+}
+
+// For all dot products in this it is a weight (2d) times a 1d matrix
+fn dot(allocator: std.mem.Allocator, W: []const []const f32, A: []const f32) ![]f32 {
+    // matrix dot product rules
+    if (W[0].len != A.len) {
+        return error.InvalidFormat;
+    }
+    // # rows in result array == # rows in W (matrix dot rules)
+    var result = try allocator.alloc(f32, W.len);
+    errdefer allocator.free(result);
+
+    for (W, 0..) |row, i| {
+        result[i] = 0;
+        for (row, A) |w_val, a_val| {
+            result[i] += w_val * a_val;
+        }
+    }
+
+    return result;
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const data = try readCsv(allocator);
+    // Calculate dot product
 
+    const data = try readCsv(allocator);
     const Y = try getY(allocator, data);
 
     defer allocator.free(data);
