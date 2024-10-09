@@ -61,25 +61,54 @@ fn getY(allocator: std.mem.Allocator, data: []ColumnDataPoint) ![]u8 {
     return Y;
 }
 
-fn transpose(allocator: std.mem.Allocator, data: []ColumnDataPoint) ![][]u8 {
-    const num_cols = data.len; // Number of images (42000)
-    const num_rows = data[0].pixels.len; // Number of pixels per image (784)
+// Helper function for initNN to randomley generate f16 between -1 & 1
+fn getFloat() !f32 {
+    var prng = std.rand.DefaultPrng.init(blk: {
+        var seed: u64 = undefined;
+        try std.posix.getrandom(std.mem.asBytes(&seed));
+        break :blk seed;
+    });
 
-    // Allocate space for cols(train samples)
-    const transposed_data = try allocator.alloc([]u8, num_cols);
-    errdefer allocator.free(transposed_data);
+    const rand = prng.random();
 
-    // Loop and fill each col with 784 rows(pixels for sample)
-    for (transposed_data, 0..) |*col, i| {
-        col.* = try allocator.alloc(u8, num_rows);
-        errdefer allocator.free(col.*);
+    const a = rand.float(f32) * 2.0 - 1.0;
 
-        // Copy the pixels
-        @memcpy(col.*, &data[i].pixels);
+    return a;
+}
+
+// Inits the weights & bias of the neural network, will be a single hidden layer w/ an input & output layer
+// In total will have two weights and two bias, will be initialized random
+fn initNN(allocator: std.mem.Allocator) !struct { W1: [][]f32, W2: [][]f32, B1: []f32, B2: []f32 } {
+    const W1 = try allocator.alloc([]f32, 10);
+    const W2 = try allocator.alloc([]f32, 10);
+    const B1 = try allocator.alloc(f32, 10);
+    const B2 = try allocator.alloc(f32, 10);
+
+    for (W1) |*row| {
+        row.* = try allocator.alloc(f32, 784);
+        for (row.*) |*val| {
+            val.* = try getFloat();
+        }
     }
 
-    return transposed_data;
+    for (W2) |*row| {
+        row.* = try allocator.alloc(f32, 1);
+        for (row.*) |*val| {
+            val.* = try getFloat();
+        }
+    }
+
+    for (B1) |*val| {
+        val.* = try getFloat();
+    }
+
+    for (B2) |*val| {
+        val.* = try getFloat();
+    }
+
+    return .{ .W1 = W1, .W2 = W2, .B1 = B1, .B2 = B2 };
 }
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -92,12 +121,10 @@ pub fn main() !void {
     defer allocator.free(data);
     defer allocator.free(Y);
 
-    const transposed = try transpose(allocator, data);
+    const nn = try initNN(allocator); // Pass the allocator to initNN
 
-    defer {
-        for (transposed) |row| {
-            allocator.free(row);
-        }
-        allocator.free(transposed);
-    }
+    defer allocator.free(nn.W1);
+    defer allocator.free(nn.W2);
+    defer allocator.free(nn.B1);
+    defer allocator.free(nn.B2);
 }
