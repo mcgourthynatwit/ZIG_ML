@@ -20,8 +20,8 @@ const Matrix = struct {
     data: std.ArrayList(std.ArrayList(f32)),
 
     const MatrixErrors = error{DimensionMismatch};
-    // Initialize matrix
-    pub fn init(allocator: std.mem.Allocator, rows: usize, cols: usize) !Matrix {
+    // Initialize random matrix
+    pub fn initRandom(allocator: std.mem.Allocator, rows: usize, cols: usize) !Matrix {
         var m = Matrix{
             .rows = rows,
             .cols = cols,
@@ -36,6 +36,28 @@ const Matrix = struct {
             for (cols) |_| {
                 const float = try getFloat();
                 try row.append(float);
+            }
+            try m.data.append(row);
+        }
+
+        return m;
+    }
+
+    // Initialize zero matrix
+    pub fn initZero(allocator: std.mem.Allocator, rows: usize, cols: usize) !Matrix {
+        var m = Matrix{
+            .rows = rows,
+            .cols = cols,
+            .data = std.ArrayList(std.ArrayList(f32)).init(allocator), // Correct initialization of the outer ArrayList
+        };
+
+        // Randomize matrix
+        for (rows) |_| {
+            var row = std.ArrayList(f32).init(allocator); // Correct initialization of each row
+            defer if (row.items.len == 0) row.deinit(); // Clean up row on error
+
+            for (cols) |_| {
+                try row.append(0);
             }
             try m.data.append(row);
         }
@@ -62,6 +84,33 @@ const Matrix = struct {
             }
         }
     }
+
+    pub fn subtractMatrix(self: *Matrix, other: *Matrix) !void {
+        if (self.rows != other.rows or self.cols != other.cols) {
+            return error.DimensionMismatch;
+        }
+
+        for (0..self.rows) |i| {
+            for (0..self.cols) |j| {
+                self.data.items[i].items[j] -= other.data.items[i].items[j];
+            }
+        }
+    }
+
+    pub fn dotProduct(allocator: std.mem.Allocator, self: *Matrix, other: *Matrix) !Matrix {
+        // Matrix dot rules
+        if (self.cols != other.rows) {
+            return error.DimensionMismatch;
+        }
+
+        var m = try Matrix.initZero(allocator, self.rows, other.cols);
+
+        for (0..self.rows, 0..other.cols, 0..self.cols) |i, j, k| {
+            m.data.items[i].items[j] += self.data.items[i].items[k] * other.data.items[k].items[j];
+        }
+
+        return m;
+    }
 };
 
 pub fn main() !void {
@@ -70,11 +119,13 @@ pub fn main() !void {
     const allocator = std.heap.page_allocator;
 
     // Create a 3x3 matrix
-    var matrix = try Matrix.init(allocator, 3, 3);
-    var matrix2 = try Matrix.init(allocator, 3, 3);
+    var matrix = try Matrix.initRandom(allocator, 3, 3);
+    var matrix2 = try Matrix.initRandom(allocator, 3, 3);
+    var zeroMatrix = try Matrix.initZero(allocator, 4, 4);
 
     defer matrix.freeMatrix();
     defer matrix2.freeMatrix();
+    defer zeroMatrix.freeMatrix();
 
     for (matrix.data.items, matrix2.data.items, 0..) |row, row2, i| {
         std.debug.print("Row: {}\n", .{i});
@@ -84,13 +135,16 @@ pub fn main() !void {
         }
     }
 
-    try matrix.addMatrix(&matrix2);
+    //try matrix.addMatrix(&matrix2);
 
-    for (matrix.data.items, 0..) |row, i| {
-        std.debug.print("Add Row: {}\n", .{i});
+    var result = try Matrix.dotProduct(allocator, &matrix, &matrix2);
+    defer result.freeMatrix();
 
-        for (row.items) |v1| {
-            std.debug.print("m1: {d:.2}\n", .{v1});
+    std.debug.print("Result of dot product:\n", .{});
+    for (result.data.items) |row| {
+        for (row.items) |value| {
+            std.debug.print("{d} ", .{value});
         }
+        std.debug.print("\n", .{});
     }
 }
