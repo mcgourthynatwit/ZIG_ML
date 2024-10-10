@@ -10,7 +10,8 @@ fn getFloat() !f32 {
 
     const rand = prng.random();
 
-    return rand.float(f32) * 2.0 - 1.0; // Float between -1 and 1
+    const rawFloat = rand.float(f32) * 2.0; // Float between -1 and 1
+    return @round(rawFloat * 2.0) / 2.0;
 }
 
 const Matrix = struct {
@@ -18,6 +19,7 @@ const Matrix = struct {
     cols: usize,
     data: std.ArrayList(std.ArrayList(f32)),
 
+    const MatrixErrors = error{DimensionMismatch};
     // Initialize matrix
     pub fn init(allocator: std.mem.Allocator, rows: usize, cols: usize) !Matrix {
         var m = Matrix{
@@ -48,6 +50,18 @@ const Matrix = struct {
         }
         self.data.deinit(); // Deinit the matrix itself
     }
+
+    pub fn addMatrix(self: *Matrix, other: *Matrix) !void {
+        if (self.rows != other.rows or self.cols != other.cols) {
+            return error.DimensionMismatch;
+        }
+
+        for (0..self.rows) |i| {
+            for (0..self.cols) |j| {
+                self.data.items[i].items[j] += other.data.items[i].items[j];
+            }
+        }
+    }
 };
 
 pub fn main() !void {
@@ -57,13 +71,26 @@ pub fn main() !void {
 
     // Create a 3x3 matrix
     var matrix = try Matrix.init(allocator, 3, 3);
-    defer matrix.freeMatrix(); // Ensure matrix is deallocated
+    var matrix2 = try Matrix.init(allocator, 3, 3);
 
-    for (matrix.data.items, 0..) |row, i| {
+    defer matrix.freeMatrix();
+    defer matrix2.freeMatrix();
+
+    for (matrix.data.items, matrix2.data.items, 0..) |row, row2, i| {
         std.debug.print("Row: {}\n", .{i});
 
-        for (row.items) |value| {
-            std.debug.print("Value: {}\n", .{value});
+        for (row.items, row2.items) |v1, v2| {
+            std.debug.print("m1: {d:.2} m2: {d:.2}\n", .{ v1, v2 });
+        }
+    }
+
+    try matrix.addMatrix(&matrix2);
+
+    for (matrix.data.items, 0..) |row, i| {
+        std.debug.print("Add Row: {}\n", .{i});
+
+        for (row.items) |v1| {
+            std.debug.print("m1: {d:.2}\n", .{v1});
         }
     }
 }
