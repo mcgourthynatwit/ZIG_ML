@@ -21,7 +21,21 @@ pub const Table = struct {
         }
     }
 
-    fn readCsv(path: []const u8) !void {
+    fn processHeader(allocator: std.mem.Allocator, header: *std.ArrayList([]const u8), line: []const u8) !void {
+        var start: usize = 0;
+        for (line, 0..) |c, i| {
+            if (c == ',') {
+                try header.append(try allocator.dupe(u8, line[start..i]));
+                start = i + 1;
+            }
+        }
+        // Don't forget the last field
+        if (start < line.len) {
+            try header.append(try allocator.dupe(u8, line[start..]));
+        }
+    }
+
+    fn readCsv(allocator: std.mem.Allocator, path: []const u8) !void {
         const file = try std.fs.cwd().openFile(path, .{});
         defer file.close();
 
@@ -43,13 +57,31 @@ pub const Table = struct {
 
             while (i < bytes_read) : (i += 1) {
                 if (buf[i] == '\n') {
-                    totalLines += 1;
+                    const line = buf[lineStart..i];
 
-                    //if (lineStart < i) {
-                    //const line = buf[lineStart..i];
-                    //try processLine(totalLines, line);
+                    // header
+                    if (totalLines == 0) {
+                        var header = std.ArrayList([]const u8).init(allocator);
+                        defer {
+                            for (header.items) |item| {
+                                allocator.free(item);
+                            }
+                            header.deinit();
+                        }
+
+                        try processHeader(allocator, &header, line);
+                        for (header.items) |field| {
+                            std.debug.print("{s} ", .{field});
+                        }
+                        return;
+                    } else if (lineStart < i) {
+                        try processLine(totalLines, line);
+                    } else {
+                        // some error
+                    }
+
+                    totalLines += 1;
                     lineStart = i;
-                    //}
                 }
             }
         }
@@ -64,9 +96,9 @@ pub const Table = struct {
 
 pub fn main() !void {
     const path: []const u8 = "data/train.csv";
-    //var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    //defer _ = gpa.deinit();
-    //const allocator = gpa.allocator();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    try Table.readCsv(path);
+    try Table.readCsv(allocator, path);
 }
