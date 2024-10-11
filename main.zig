@@ -164,9 +164,7 @@ fn softmax(allocator: std.mem.Allocator, Z: []f32) ![]f32 {
 }
 
 fn addBias(allocator: std.mem.Allocator, Z: *[][]f32, B: []f32) ![]f32 {
-    for (Z, 0..) |z_val, i| {
-        
-    }
+    for (Z, 0..) |z_val, i| {}
 
     return result;
 }
