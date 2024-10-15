@@ -47,10 +47,10 @@ pub const Table = struct {
         var buf: [1048576]u8 = undefined;
 
         // used when reading a line & buff reaches the end
-        var bufOffset: usize = 0;
+        var buf_offset: usize = 0;
 
-        var totalLines: usize = 0;
-        var lineStart: usize = 0;
+        var total_lines: usize = 0;
+        var line_start: usize = 0;
 
         var header = std.ArrayList([]u8).init(allocator);
         var lines = std.ArrayList([]u8).init(allocator);
@@ -61,48 +61,48 @@ pub const Table = struct {
         const start_time = std.time.milliTimestamp();
 
         while (true) {
-            const bytes_read = try in_stream.readAll(buf[bufOffset..]);
+            const bytes_read = try in_stream.readAll(buf[buf_offset..]);
 
             if (bytes_read == 0) break;
 
-            const totalBytesInBuffer = bufOffset + bytes_read;
-            var lineEnd: usize = bufOffset;
+            const total_bytes_in_buffer = buf_offset + bytes_read;
+            var line_end: usize = buf_offset;
 
-            while (lineEnd < totalBytesInBuffer) : (lineEnd += 1) {
-                if (buf[lineEnd] == '\n') {
-                    //const line = buf[lineStart..lineEnd];
+            while (line_end < total_bytes_in_buffer) : (line_end += 1) {
+                if (buf[line_end] == '\n') {
+                    //const line = buf[line_start..line_end];
 
                     // assume line 1 is headers
-                    if (totalLines == 0) {
+                    if (total_lines == 0) {
                         //try processHeader(allocator, &header, line);
                     } else {
                         // line
                     }
 
-                    totalLines += 1;
-                    lineStart = lineEnd + 1;
+                    total_lines += 1;
+                    line_start = line_end + 1;
                 }
             }
-            // if lineStart is less then totalBytes, then the line is not finisehd processing
-            if (lineStart < totalBytesInBuffer) {
-                bufOffset = totalBytesInBuffer - lineStart;
+            // if line_start is less then totalBytes, then the line is not finisehd processing
+            if (line_start < total_bytes_in_buffer) {
+                buf_offset = total_bytes_in_buffer - line_start;
 
-                for (0..bufOffset) |i| {
-                    buf[i] = buf[lineStart + i];
+                for (0..buf_offset) |i| {
+                    buf[i] = buf[line_start + i];
                 }
 
-                lineStart = 0;
+                line_start = 0;
             }
             // reset buffOffset if line fully processed
             else {
-                bufOffset = 0;
+                buf_offset = 0;
             }
         }
         const end_time = std.time.milliTimestamp();
         const elapsed_milliseconds = end_time - start_time;
         const elapsed_seconds = @as(f64, @floatFromInt(elapsed_milliseconds)) / 1000.0;
         std.debug.print("Time taken: {d:.3} seconds\n", .{elapsed_seconds});
-        std.debug.print("Total lines processed: {d}\n", .{totalLines});
+        std.debug.print("Total lines processed: {d}\n", .{total_lines});
     }
 };
 
