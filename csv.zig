@@ -18,15 +18,9 @@ pub const Table = struct {
     }
 
     pub fn deinit(self: *Table) void {
-        for (self.headers.items) |header| {
-            self.allocator.free(header);
-        }
         self.headers.deinit();
 
         for (self.body.items) |*row| {
-            for (row.items) |cell| {
-                self.allocator.free(cell);
-            }
             row.deinit();
         }
         self.body.deinit();
@@ -121,5 +115,5 @@ pub fn main() !void {
     const elapsed_milliseconds = end_time - start_time;
     const elapsed_seconds = @as(f64, @floatFromInt(elapsed_milliseconds)) / 1000.0;
     std.debug.print("Time taken: {d:.3} seconds\n", .{elapsed_seconds});
-    std.debug.print("Total cols: {d}, total rows: {d}\n", .{ table.headers.items.len, table.body.items.len });
+    std.debug.print("Row 1 {s}\n", .{table.body.items[0].items});
 }
