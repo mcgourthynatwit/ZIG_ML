@@ -6,21 +6,30 @@ pub const Table = struct {
     allocator: std.mem.Allocator,
     arena_allocator: std.heap.ArenaAllocator,
     headers: std.ArrayListAligned([]const u8, null),
-    body: std.ArrayListAligned([]const u8, null),
+    body: std.ArrayListAligned(std.ArrayList([]const u8), null),
 
     pub fn init(allocator: std.mem.Allocator) Table {
         return Table{
             .allocator = allocator,
             .arena_allocator = std.heap.ArenaAllocator.init(allocator),
             .headers = std.ArrayList([]const u8).init(allocator),
-            .body = std.ArrayList([]const u8).init(allocator),
+            .body = std.ArrayList(std.ArrayList([]const u8)).init(allocator),
         };
     }
 
     pub fn deinit(self: *Table) void {
+        for (self.headers.items) |header| {
+            self.allocator.free(header);
+        }
         self.headers.deinit();
+
+        for (self.body.items) |*row| {
+            for (row.items) |cell| {
+                self.allocator.free(cell);
+            }
+            row.deinit();
+        }
         self.body.deinit();
-        self.arena_allocator.deinit();
     }
 
     pub fn readCsv(allocator: std.mem.Allocator, file_name: []const u8) ![]const u8 {
@@ -48,9 +57,21 @@ pub const Table = struct {
         }
     }
 
+    fn parseLine(self: *Table, line: []const u8, num_cols: usize, row: *std.ArrayList([]const u8)) !void {
+        var it = std.mem.split(u8, line, ",");
+        while (it.next()) |field| {
+            const trimmed = std.mem.trim(u8, field, " \t\r\n");
+            try row.append(trimmed);
+        }
+
+        // Pad with empty strings if necessary
+        while (row.items.len < num_cols) {
+            try row.append(try self.allocator.dupe(u8, ""));
+        }
+    }
+
     pub fn parse(self: *Table, csv_data: []const u8) TableError!void {
         var rows = std.mem.split(u8, csv_data, "\n");
-        var body = std.mem.split(u8, rows.rest(), ",");
 
         self.headers.clearAndFree();
         self.body.clearAndFree();
@@ -60,7 +81,24 @@ pub const Table = struct {
         } else {
             return TableError.MissingHeader;
         }
-        while (body.next()) |row| if (row.len > 0) try self.body.append(row);
+
+        const num_cols = self.headers.items.len;
+
+        // Estimated rows = total bytes of buffer / (cols * 7) ~ 7 is a an estimate of num bytes per cell this can be changed as testing proceeds
+        const estimated_rows = csv_data.len / (num_cols * 7);
+
+        // Allocate estimate
+        try self.body.ensureTotalCapacity(estimated_rows);
+
+        var row = try std.ArrayList([]const u8).initCapacity(self.allocator, num_cols);
+        defer row.deinit();
+
+        while (rows.next()) |line| {
+            if (std.mem.trim(u8, line, " \r\n").len == 0) continue;
+            try self.parseLine(line, num_cols, &row);
+            try self.body.append(try row.clone());
+            row.clearRetainingCapacity(); // clear row for next iteration
+        }
     }
 };
 
@@ -83,5 +121,5 @@ pub fn main() !void {
     const elapsed_milliseconds = end_time - start_time;
     const elapsed_seconds = @as(f64, @floatFromInt(elapsed_milliseconds)) / 1000.0;
     std.debug.print("Time taken: {d:.3} seconds\n", .{elapsed_seconds});
-    std.debug.print("Total lines processed: {s}\n", .{table.headers.items});
+    std.debug.print("Total cols: {d}, total rows: {d}\n", .{ table.headers.items.len, table.body.items.len });
 }
