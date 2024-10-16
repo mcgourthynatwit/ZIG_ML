@@ -39,15 +39,27 @@ pub const Table = struct {
         return buffer;
     }
 
+    pub fn parseHeader(self: *Table, header_line: []const u8) !void {
+        var header_items = std.mem.split(u8, header_line, ",");
+        self.headers.clearAndFree();
+        while (header_items.next()) |item| {
+            const trimmed_item = std.mem.trim(u8, item, " \r\n");
+            try self.headers.append(trimmed_item);
+        }
+    }
+
     pub fn parse(self: *Table, csv_data: []const u8) TableError!void {
         var rows = std.mem.split(u8, csv_data, "\n");
-        var header = std.mem.split(u8, rows.next() orelse return TableError.MissingHeader, ",");
         var body = std.mem.split(u8, rows.rest(), ",");
 
         self.headers.clearAndFree();
         self.body.clearAndFree();
 
-        while (header.next()) |key| if (key.len > 0) try self.headers.append(key);
+        if (rows.next()) |header_line| {
+            try self.parseHeader(header_line);
+        } else {
+            return TableError.MissingHeader;
+        }
         while (body.next()) |row| if (row.len > 0) try self.body.append(row);
     }
 };
@@ -71,5 +83,5 @@ pub fn main() !void {
     const elapsed_milliseconds = end_time - start_time;
     const elapsed_seconds = @as(f64, @floatFromInt(elapsed_milliseconds)) / 1000.0;
     std.debug.print("Time taken: {d:.3} seconds\n", .{elapsed_seconds});
-    std.debug.print("Total lines processed: {s}\n", .{table.body.items[0..table.headers.items.len]});
+    std.debug.print("Total lines processed: {s}\n", .{table.headers.items});
 }
