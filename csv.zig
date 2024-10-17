@@ -94,6 +94,23 @@ pub const Table = struct {
             row.clearRetainingCapacity(); // clear row for next iteration
         }
     }
+
+    pub fn head(self: *Table) !void {
+        if (self.headers.items.len == 0) {
+            return TableError.MissingHeader;
+        }
+
+        const n: usize = @min(5, self.body.items.len);
+
+        std.debug.print("{s}\n", .{self.headers.items});
+        for (0..n) |i| {
+            std.debug.print("{s}\n", .{self.body.items[i].items});
+        }
+    }
+
+    pub fn columns(self: *Table) [][]const u8 {
+        return self.headers.items;
+    }
 };
 
 pub fn main() !void {
@@ -115,5 +132,9 @@ pub fn main() !void {
     const elapsed_milliseconds = end_time - start_time;
     const elapsed_seconds = @as(f64, @floatFromInt(elapsed_milliseconds)) / 1000.0;
     std.debug.print("Time taken: {d:.3} seconds\n", .{elapsed_seconds});
-    std.debug.print("Row 1 {s}\n", .{table.body.items[0].items});
+    const cols: [][]const u8 = table.columns();
+
+    for (cols) |col| {
+        std.debug.print("{s}\n", .{col});
+    }
 }
