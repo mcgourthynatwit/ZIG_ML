@@ -1,7 +1,7 @@
 const std = @import("std");
 const Matrix = @import("matrix.zig");
 
-pub const TableError = error{ MissingHeader, OutOfMemory };
+pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn };
 
 const HeaderEntry = struct {
     header: []const u8,
@@ -203,11 +203,23 @@ pub const Table = struct {
 
     // @TODO
     // Returns a new Table that is subset of input table containing filtered rows
-    //pub fn filter(self: *Table, cols: [][]u8) !Table {}
+    pub fn filter(self: *Table, cols: []const []const u8) !void {
+        for (cols) |col| {
+            if (!self.headerExists(col)) {
+                return TableError.InvalidColumn;
+            }
+        }
+    }
 
     // @TODO
     // Drops specified cols of a table inplace
-    //pub fn drop(self: *Table, cols: [][]u8) !void {}
+    pub fn drop(self: *Table, cols: [][]u8) !void {
+        for (cols) |col| {
+            if (!self.headerExists(col)) {
+                return TableError.InvalidColumn;
+            }
+        }
+    }
 
     // @TODO
     // Converts table to a matrix for matrix operations
