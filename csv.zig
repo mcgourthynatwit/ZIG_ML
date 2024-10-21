@@ -3,6 +3,11 @@ const Matrix = @import("matrix.zig");
 
 pub const TableError = error{ MissingHeader, OutOfMemory };
 
+const HeaderEntry = struct {
+    header: []const u8,
+    index: usize,
+};
+
 pub const Table = struct {
     allocator: std.mem.Allocator,
     body: std.ArrayListAligned(std.ArrayList([]const u8), null),
@@ -129,16 +134,23 @@ pub const Table = struct {
     // Prints out the columns & the first 5 rows of the table
     // @TODO : Formatting this output for really long rows
     pub fn head(self: *Table) !void {
-        if (self.headers.count == 0) {
+        if (self.headers.count() == 0) {
             return TableError.MissingHeader;
         }
 
         const n: usize = @min(5, self.body.items.len);
 
-        var it = self.headers.iterator();
-        while (it.next()) |entry| {
-            std.debug.print("{s}", .{entry.key_ptr.*});
+        // allocate array to sort
+        var headers = try self.allocator.alloc(HeaderEntry, self.headers.count());
+        defer self.allocator.free(headers);
+
+        // sort headers by index
+        try self.sortHeaders(&headers);
+
+        for (headers) |header| {
+            std.debug.print("{s} ", .{header.header});
         }
+        std.debug.print("\n", .{});
 
         for (0..n) |i| {
             std.debug.print("\n{s}", .{self.body.items[i].items});
@@ -158,6 +170,37 @@ pub const Table = struct {
         std.debug.print("{d} columns\n", .{self.headers.count()});
     }
 
+    pub fn headerExists(self: *Table, header: []const u8) bool {
+        return self.headers.contains(header);
+    }
+
+    // Helper function for head or when printing out, since hashmap does not store the
+    // headers in the order they where added we need to sort and print.
+    pub fn sortHeaders(self: *Table, headers: *[]HeaderEntry) !void {
+        var it = self.headers.iterator();
+        var i: usize = 0;
+
+        // populate headers with {header, index}
+        while (it.next()) |entry| {
+            headers.*[i] = HeaderEntry{ .header = entry.key_ptr.*, .index = entry.value_ptr.* };
+            i += 1;
+        }
+
+        // compare by index
+        const compare = struct {
+            fn compareByIndex(_: void, a: HeaderEntry, b: HeaderEntry) bool {
+                if (a.index < b.index) {
+                    return true;
+                } else {
+                    return false;
+                }
+            }
+        };
+
+        // built in func to sort using compareByIndex to specify sorting by index
+        std.mem.sort(HeaderEntry, headers.*, {}, compare.compareByIndex);
+    }
+
     // @TODO
     // Returns a new Table that is subset of input table containing filtered rows
     //pub fn filter(self: *Table, cols: [][]u8) !Table {}
@@ -170,27 +213,3 @@ pub const Table = struct {
     // Converts table to a matrix for matrix operations
     //pub fn toMatrix(self: *Table) !Matrix {}
 };
-
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    const csv_data = try Table.readCsv(allocator, "data/test_2.csv");
-    defer allocator.free(csv_data);
-
-    var table: Table = Table.init(allocator);
-    defer table.deinit();
-
-    const start_time = std.time.milliTimestamp();
-
-    try table.parse(csv_data);
-
-    const end_time = std.time.milliTimestamp();
-    const elapsed_milliseconds = end_time - start_time;
-    const elapsed_seconds = @as(f64, @floatFromInt(elapsed_milliseconds)) / 1000.0;
-    std.debug.print("Time taken: {d:.3} seconds\n", .{elapsed_seconds});
-    table.shape();
-
-    std.debug.print("{s}\n", .{table.body.items[0].items[0..6]});
-}
