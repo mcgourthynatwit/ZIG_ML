@@ -1,18 +1,19 @@
 const std = @import("std");
+const Matrix = @import("matrix.zig");
 
 pub const TableError = error{ MissingHeader, OutOfMemory };
 
 pub const Table = struct {
     allocator: std.mem.Allocator,
-    headers: std.ArrayListAligned([]const u8, null),
     body: std.ArrayListAligned(std.ArrayList([]const u8), null),
+    headers: std.StringHashMap(usize),
 
     // Creates empty Table struct
     pub fn init(allocator: std.mem.Allocator) Table {
         return Table{
             .allocator = allocator,
-            .headers = std.ArrayList([]const u8).init(allocator),
             .body = std.ArrayList(std.ArrayList([]const u8)).init(allocator),
+            .headers = std.StringHashMap(usize).init(allocator),
         };
     }
 
@@ -47,6 +48,11 @@ pub const Table = struct {
         return buffer;
     }
 
+    pub fn addHeader(self: *Table, header: []const u8) !void {
+        const index = self.headers.count();
+        try self.headers.put(header, index);
+    }
+
     // Helper for parse()
     // Gets the headers of the CSV and directly appends those to self.headers
     pub fn parseHeader(self: *Table, header_line: []const u8) !void {
@@ -57,7 +63,7 @@ pub const Table = struct {
             const trimmed_item = std.mem.trim(u8, item, " \r\n");
 
             // Append to headers
-            try self.headers.append(trimmed_item);
+            try self.addHeader(trimmed_item);
         }
     }
 
@@ -97,7 +103,7 @@ pub const Table = struct {
             return TableError.MissingHeader;
         }
 
-        const num_cols = self.headers.items.len;
+        const num_cols = self.headers.count();
 
         // Estimated rows = total bytes of buffer / (cols * 7) ~ 7 is a an estimate of num bytes per cell this can be changed as testing proceeds
         const estimated_rows = csv_data.len / (num_cols * 7);
@@ -123,30 +129,46 @@ pub const Table = struct {
     // Prints out the columns & the first 5 rows of the table
     // @TODO : Formatting this output for really long rows
     pub fn head(self: *Table) !void {
-        if (self.headers.items.len == 0) {
+        if (self.headers.count == 0) {
             return TableError.MissingHeader;
         }
 
         const n: usize = @min(5, self.body.items.len);
 
-        std.debug.print("{s}\n", .{self.headers.items});
+        var it = self.headers.iterator();
+        while (it.next()) |entry| {
+            std.debug.print("{s}", .{entry.key_ptr.*});
+        }
+
         for (0..n) |i| {
-            std.debug.print("{s}\n", .{self.body.items[i].items});
+            std.debug.print("\n{s}", .{self.body.items[i].items});
         }
     }
 
     // Takes in table struct
     // Returns a 2d char array of the headers [header_idx][header_char_array]
     pub fn columns(self: *Table) [][]const u8 {
-        return self.headers.items;
+        return self.headers.count();
     }
 
     // Takes in table struct
     // Prints out the number of rows & number of columns.
     pub fn shape(self: *Table) void {
         std.debug.print("{d} rows\n", .{self.body.items.len});
-        std.debug.print("{d} columns\n", .{self.headers.items.len});
+        std.debug.print("{d} columns\n", .{self.headers.count()});
     }
+
+    // @TODO
+    // Returns a new Table that is subset of input table containing filtered rows
+    //pub fn filter(self: *Table, cols: [][]u8) !Table {}
+
+    // @TODO
+    // Drops specified cols of a table inplace
+    //pub fn drop(self: *Table, cols: [][]u8) !void {}
+
+    // @TODO
+    // Converts table to a matrix for matrix operations
+    //pub fn toMatrix(self: *Table) !Matrix {}
 };
 
 pub fn main() !void {
@@ -154,7 +176,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const csv_data = try Table.readCsv(allocator, "data/train.csv");
+    const csv_data = try Table.readCsv(allocator, "data/test_2.csv");
     defer allocator.free(csv_data);
 
     var table: Table = Table.init(allocator);
@@ -169,4 +191,6 @@ pub fn main() !void {
     const elapsed_seconds = @as(f64, @floatFromInt(elapsed_milliseconds)) / 1000.0;
     std.debug.print("Time taken: {d:.3} seconds\n", .{elapsed_seconds});
     table.shape();
+
+    std.debug.print("{s}\n", .{table.body.items[0].items[0..6]});
 }
