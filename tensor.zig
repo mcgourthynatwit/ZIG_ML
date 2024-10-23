@@ -47,13 +47,16 @@ pub const Tensor = struct {
         }
 
         var tensor_data = try allocator.alloc(f32, tensor_size);
+        errdefer allocator.free(tensor_data);
 
         var tensor_shape = try allocator.alloc(usize, 2);
+        errdefer allocator.free(tensor_shape);
 
         tensor_shape[0] = rows;
         tensor_shape[1] = cols;
 
         var strides = try allocator.alloc(usize, 2);
+        errdefer allocator.free(strides);
 
         strides[0] = cols;
         strides[1] = 1;
@@ -147,7 +150,39 @@ pub const Tensor = struct {
     // Multiplies two tensors in place
     //pub fn multiply(self: *Tensor, other: *Tensor) !void {}
 
-    // @TODO
+    pub fn initIdentityMatrix(self: *Tensor) !Tensor {
+        const tensor_size = self.shape[0] * self.shape[1];
+
+        var tensor_data = try self.allocator.alloc(f32, tensor_size);
+
+        var tensor_shape = try self.allocator.alloc(usize, 2);
+
+        tensor_shape[0] = self.shape[0];
+        tensor_shape[1] = self.shape[1];
+
+        var strides = try self.allocator.alloc(usize, 2);
+
+        strides[0] = self.shape[1];
+        strides[1] = 1;
+
+        // fill zeros
+        for (0..tensor_size) |idx| {
+            tensor_data[idx] = 0;
+        }
+
+        var i: usize = 0;
+        while (i < self.shape[0]) : (i += 1) {
+            const idx: usize = i * self.shape[1] + i; // Diagonal index
+            tensor_data[idx] = 1;
+        }
+
+        return Tensor{
+            .data = tensor_data,
+            .shape = tensor_shape,
+            .strides = strides,
+            .allocator = self.allocator,
+        };
+    }
     // Transposes a tensor
     pub fn transpose(self: *Tensor) !Tensor {
         const tensor_size = self.shape[0] * self.shape[1];
@@ -170,5 +205,18 @@ pub const Tensor = struct {
         const tensor: Tensor = try initTensor(self.allocator, self.shape[1], self.shape[0], transposed_data);
         self.allocator.free(transposed_data);
         return tensor;
+    }
+    // Gaussian Jordan Elimination to inverse higher order matrices (3x3, 4,4 ... )
+    //pub fn gaussJordanElim(self: *Tensor) !f32 {
+    // These will be equal and this is checked in inverseVector before this function is reached
+    //var rows: usize = self.shape[0];
+    //var cols: usize = self.shape[1];
+    // }
+
+    pub fn inverseVector(self: *Tensor) !Tensor {
+        // to take an inverse mat must be square
+        if (self.shape[0] != self.shape[1]) {
+            return TensorError.InvalidDimensions;
+        }
     }
 };
