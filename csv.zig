@@ -211,6 +211,14 @@ pub const Table = struct {
         }
     }
 
+    pub fn getHeaderIdx(self: *Table, col: []const u8) !usize {
+        if (self.headers.get(col)) |idx| {
+            return idx;
+        }
+
+        return TableError.InvalidColumn;
+    }
+
     // @TODO
     // Drops specified cols of a table inplace
     pub fn drop(self: *Table, cols: [][]u8) !void {
