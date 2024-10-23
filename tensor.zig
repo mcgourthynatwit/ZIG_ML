@@ -149,5 +149,26 @@ pub const Tensor = struct {
 
     // @TODO
     // Transposes a tensor
-    //pub fn transpose(self: *Tensor) !Tensor {}
+    pub fn transpose(self: *Tensor) !Tensor {
+        const tensor_size = self.shape[0] * self.shape[1];
+
+        var transposed_data = try self.allocator.alloc(f32, tensor_size);
+
+        for (0..self.shape[0]) |original_row_idx| {
+            for (0..self.shape[1]) |original_col_idx| {
+                // Get original tensor data index
+                const src_index = (original_row_idx * self.strides[0]) + (original_col_idx * self.strides[1]);
+
+                // Get transposed index val, Essentially : (original_col_idx * self.shape) gets the transposed row index while original_row_index indicates the offset(transposed col index)
+                const dst_index = (original_col_idx * self.shape[0]) + original_row_idx;
+
+                // Updated transposed_data
+                transposed_data[dst_index] = self.data[src_index];
+            }
+        }
+
+        const tensor: Tensor = try initTensor(self.allocator, self.shape[1], self.shape[0], transposed_data);
+        self.allocator.free(transposed_data);
+        return tensor;
+    }
 };
