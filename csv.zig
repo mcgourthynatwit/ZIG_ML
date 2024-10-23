@@ -1,5 +1,6 @@
 const std = @import("std");
-const Matrix = @import("matrix.zig");
+const tensor_file = @import("tensor.zig");
+const Tensor = tensor_file.Tensor;
 
 pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn };
 
@@ -290,6 +291,42 @@ pub const Table = struct {
             const colIdx = try self.getHeaderIdx(col);
             drop_map.put(colIdx);
         }
+    }
+
+    // @TODO adjust for handling of strings
+    // Converts a table struct to a tensor
+    pub fn toTensor(self: *Table, allocator: std.mem.Allocator) !Tensor {
+        const table_rows = self.body.items.len;
+        const table_cols = self.headers.count();
+
+        const tensor_size = table_rows * table_cols;
+
+        var data = try allocator.alloc(f32, tensor_size);
+
+        var tensor_shape = try allocator.alloc(usize, 2);
+        tensor_shape[0] = table_rows;
+        tensor_shape[1] = table_cols;
+
+        var strides = try allocator.alloc(usize, 2);
+        strides[0] = table_cols;
+        strides[1] = 1;
+
+        // fill in tensor
+        var i: usize = 0;
+
+        for (self.body.items) |row| {
+            for (row.items) |cell| {
+                data[i] = try std.fmt.parseFloat(f32, cell);
+                i += 1;
+            }
+        }
+
+        return Tensor{
+            .data = data,
+            .shape = tensor_shape,
+            .strides = strides,
+            .allocator = allocator,
+        };
     }
 
     // @TODO
