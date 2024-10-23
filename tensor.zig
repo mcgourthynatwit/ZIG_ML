@@ -37,6 +37,44 @@ pub const Tensor = struct {
         self.allocator.free(self.strides);
     }
 
+    // Init a tensor from scratch passing rows, cols & arr of floats
+    // data must be in format: const tensor_data = [_]f32{ 1.0, 2.0 ... };
+    pub fn initTensor(allocator: std.mem.Allocator, rows: usize, cols: usize, data: []const f32) !Tensor {
+        const tensor_size = rows * cols;
+
+        if (tensor_size != data.len) {
+            return TensorError.InvalidDimensions;
+        }
+
+        var tensor_data = try allocator.alloc(f32, tensor_size);
+
+        var tensor_shape = try allocator.alloc(usize, 2);
+
+        tensor_shape[0] = rows;
+        tensor_shape[1] = cols;
+
+        var strides = try allocator.alloc(usize, 2);
+
+        strides[0] = cols;
+        strides[1] = 1;
+
+        // fill in tensor
+        var i: usize = 0;
+
+        for (data) |item| {
+            tensor_data[i] = item;
+            i += 1;
+        }
+
+        return Tensor{
+            .data = tensor_data,
+            .shape = tensor_shape,
+            .strides = strides,
+            .allocator = allocator,
+        };
+    }
+
+    //////////////////// TENSOR MATHEMATICAL FUNCTIONS  /////////////////////
     // @TODO initial implementation will be updating tensor in place but going forward may add field to return a new tensor
 
     // Adds two tensors together
@@ -100,6 +138,10 @@ pub const Tensor = struct {
         self.strides[0] = cols;
         self.strides[1] = 1;
     }
+
+    //pub fn transpose(self: *Tensor) !Tensor {}
+
+    //pub fn matrixInv(self: *Tensor) !Tensor {a}
 
     // @TODO
     // Multiplies two tensors in place
