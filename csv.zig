@@ -8,6 +8,7 @@ const HeaderEntry = struct {
     index: usize,
 };
 
+// @TODO adjust Table & add enum to handle floats
 pub const Table = struct {
     allocator: std.mem.Allocator,
     body: std.ArrayListAligned(std.ArrayList([]const u8), null),
@@ -212,6 +213,7 @@ pub const Table = struct {
         }
     }
 
+    // @TODO There is certainly some way to optimize this, zig can utilize c++ API wonder if we can integrate CUDA
     // Returns a new Table that is subset of input table containing filtered rows
     pub fn filter(self: *Table, allocator: std.mem.Allocator, cols: []const []const u8) !Table {
         // Hashmap to store col index for quick lookup
@@ -266,6 +268,7 @@ pub const Table = struct {
         return filtered_table;
     }
 
+    // Gets the index of the header of a table
     pub fn getHeaderIdx(self: *Table, col: []const u8) !usize {
         if (self.headers.get(col)) |idx| {
             return idx;
@@ -274,7 +277,6 @@ pub const Table = struct {
         return TableError.InvalidColumn;
     }
 
-    // @TODO
     // Drops specified cols of a table inplace
     pub fn drop(self: *Table, cols: [][]u8) !void {
         const dropped_num: usize = cols.len;
