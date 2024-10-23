@@ -201,6 +201,14 @@ pub const Table = struct {
         std.mem.sort(HeaderEntry, headers.*, {}, compare.compareByIndex);
     }
 
+    pub fn addFilteredRow(line: std.ArrayList([]const u8), cols: std.AutoHashMap(usize, void), row: *std.ArrayList([]const u8)) !void {
+        for (0.., line.items) |idx, cell| {
+            if (cols.contains(idx)) {
+                try row.append(cell);
+            }
+        }
+    }
+
     // @TODO
     // Returns a new Table that is subset of input table containing filtered rows
     pub fn filter(self: *Table, allocator: std.mem.Allocator, cols: []const []const u8) !Table {
@@ -215,7 +223,7 @@ pub const Table = struct {
             try filter_map.put(colIdx, {});
         }
 
-        var FilteredTable = Table.init(allocator);
+        var filtered_table = Table.init(allocator);
 
         var headers = try self.allocator.alloc(HeaderEntry, self.headers.count());
         defer self.allocator.free(headers);
@@ -223,20 +231,33 @@ pub const Table = struct {
         // sort headers by index
         try self.sortHeaders(&headers);
 
+        // put filtered headers into filter Table
         for (headers) |header| {
             if (filter_map.contains(header.index)) {
-                try FilteredTable.addHeader(header.header);
+                try filtered_table.addHeader(header.header);
             }
         }
 
-        return FilteredTable;
+        const num_cols = cols.len;
 
-        // sort old headers
+        // Estimated rows = total bytes of buffer / (cols * 7) ~ 7 is a an estimate of num bytes per cell this can be changed as testing proceeds
+        const estimated_rows = self.body.items.len / (num_cols * 7);
 
-        // put headers into filteredTable
+        // Allocate estimate
+        try filtered_table.body.ensureTotalCapacity(estimated_rows);
 
-        // iterate through rows and append to each
+        // Store row data that will be appened onto self.body
+        var row = try std.ArrayList([]const u8).initCapacity(self.allocator, num_cols);
+        defer row.deinit();
 
+        for (self.body.items) |unfiltered_row| {
+            try addFilteredRow(unfiltered_row, filter_map, &row);
+
+            try filtered_table.body.append(try row.clone());
+            row.clearRetainingCapacity();
+        }
+
+        return filtered_table;
     }
 
     pub fn getHeaderIdx(self: *Table, col: []const u8) !usize {
