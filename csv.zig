@@ -304,10 +304,12 @@ pub const Table = struct {
         var data = try allocator.alloc(f32, tensor_size);
 
         var tensor_shape = try allocator.alloc(usize, 2);
+
         tensor_shape[0] = table_rows;
         tensor_shape[1] = table_cols;
 
         var strides = try allocator.alloc(usize, 2);
+
         strides[0] = table_cols;
         strides[1] = 1;
 
