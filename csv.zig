@@ -203,12 +203,40 @@ pub const Table = struct {
 
     // @TODO
     // Returns a new Table that is subset of input table containing filtered rows
-    pub fn filter(self: *Table, cols: []const []const u8) !void {
+    pub fn filter(self: *Table, allocator: std.mem.Allocator, cols: []const []const u8) !Table {
+        var filter_map = std.AutoHashMap(usize, void).init(self.allocator);
+        defer filter_map.deinit();
+
         for (cols) |col| {
             if (!self.headerExists(col)) {
                 return TableError.InvalidColumn;
             }
+            const colIdx = try self.getHeaderIdx(col);
+            try filter_map.put(colIdx, {});
         }
+
+        var FilteredTable = Table.init(allocator);
+
+        var headers = try self.allocator.alloc(HeaderEntry, self.headers.count());
+        defer self.allocator.free(headers);
+
+        // sort headers by index
+        try self.sortHeaders(&headers);
+
+        for (headers) |header| {
+            if (filter_map.contains(header.index)) {
+                try FilteredTable.addHeader(header.header);
+            }
+        }
+
+        return FilteredTable;
+
+        // sort old headers
+
+        // put headers into filteredTable
+
+        // iterate through rows and append to each
+
     }
 
     pub fn getHeaderIdx(self: *Table, col: []const u8) !usize {
@@ -222,10 +250,16 @@ pub const Table = struct {
     // @TODO
     // Drops specified cols of a table inplace
     pub fn drop(self: *Table, cols: [][]u8) !void {
+        const dropped_num: usize = cols.len;
+        var drop_map = std.AutoHashMap(dropped_num, void).init(self.allocator);
+        defer drop_map.deinit();
+
         for (cols) |col| {
             if (!self.headerExists(col)) {
                 return TableError.InvalidColumn;
             }
+            const colIdx = try self.getHeaderIdx(col);
+            drop_map.put(colIdx);
         }
     }
 
