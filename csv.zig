@@ -53,6 +53,7 @@ pub const Table = struct {
         return buffer;
     }
 
+    // Add header to table
     pub fn addHeader(self: *Table, header: []const u8) !void {
         const index = self.headers.count();
         try self.headers.put(header, index);
@@ -170,6 +171,7 @@ pub const Table = struct {
         std.debug.print("{d} columns\n", .{self.headers.count()});
     }
 
+    // Check to see if header exists in table
     pub fn headerExists(self: *Table, header: []const u8) bool {
         return self.headers.contains(header);
     }
@@ -201,6 +203,7 @@ pub const Table = struct {
         std.mem.sort(HeaderEntry, headers.*, {}, compare.compareByIndex);
     }
 
+    // Helper function for filter that parses a row of an original table and only appends the cells in specified cols
     pub fn addFilteredRow(line: std.ArrayList([]const u8), cols: std.AutoHashMap(usize, void), row: *std.ArrayList([]const u8)) !void {
         for (0.., line.items) |idx, cell| {
             if (cols.contains(idx)) {
@@ -209,12 +212,13 @@ pub const Table = struct {
         }
     }
 
-    // @TODO
     // Returns a new Table that is subset of input table containing filtered rows
     pub fn filter(self: *Table, allocator: std.mem.Allocator, cols: []const []const u8) !Table {
+        // Hashmap to store col index for quick lookup
         var filter_map = std.AutoHashMap(usize, void).init(self.allocator);
         defer filter_map.deinit();
 
+        // Iterate through passed array and fill in hashmap
         for (cols) |col| {
             if (!self.headerExists(col)) {
                 return TableError.InvalidColumn;
@@ -223,15 +227,16 @@ pub const Table = struct {
             try filter_map.put(colIdx, {});
         }
 
+        // Init filtered table struct
         var filtered_table = Table.init(allocator);
 
         var headers = try self.allocator.alloc(HeaderEntry, self.headers.count());
         defer self.allocator.free(headers);
 
-        // sort headers by index
+        // Sort headers by index
         try self.sortHeaders(&headers);
 
-        // put filtered headers into filter Table
+        // Put filtered headers into filter Table
         for (headers) |header| {
             if (filter_map.contains(header.index)) {
                 try filtered_table.addHeader(header.header);
@@ -240,7 +245,7 @@ pub const Table = struct {
 
         const num_cols = cols.len;
 
-        // Estimated rows = total bytes of buffer / (cols * 7) ~ 7 is a an estimate of num bytes per cell this can be changed as testing proceeds
+        // Estimated rows = total bytes / (cols * 7) ~ 7 is a an estimate of num bytes per cell this can be changed as testing proceeds
         const estimated_rows = self.body.items.len / (num_cols * 7);
 
         // Allocate estimate
@@ -250,6 +255,7 @@ pub const Table = struct {
         var row = try std.ArrayList([]const u8).initCapacity(self.allocator, num_cols);
         defer row.deinit();
 
+        // Iterate through rows of original table and use helper func to process & append
         for (self.body.items) |unfiltered_row| {
             try addFilteredRow(unfiltered_row, filter_map, &row);
 
