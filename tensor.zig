@@ -2,7 +2,7 @@ const std = @import("std");
 const csv = @import("csv.zig");
 const Table = csv.Table;
 
-pub const TensorError = error{InvalidDimensions};
+pub const TensorError = error{ InvalidDimensions, OutOfBounds };
 
 pub const Tensor = struct {
     data: []f32, // 1d flattened array continous in memory
@@ -77,6 +77,24 @@ pub const Tensor = struct {
         };
     }
 
+    // gets the value at the row/col passed, helper function for Gauss Jordan
+    pub fn get(self: Tensor, row: usize, col: usize) !f32 {
+        if (row >= self.shape[0] or col >= self.shape[1]) {
+            return TensorError.OutOfBounds;
+        }
+        return self.data[(row * self.strides[0]) + (col * self.strides[1])];
+    }
+
+    pub fn getRow(self: Tensor, row: usize) ![]f32 {
+        if (row >= self.shape[0]) {
+            return TensorError.OutOfBounds;
+        }
+
+        const start_index = (row * self.strides[0]) + (0 * self.strides[1]);
+        const end_index = (row * self.strides[0]) + (self.shape[1] * self.strides[1]);
+
+        return self.data[start_index..end_index];
+    }
     //////////////////// TENSOR MATHEMATICAL FUNCTIONS  /////////////////////
     // @TODO initial implementation will be updating tensor in place but going forward may add field to return a new tensor
 
@@ -206,12 +224,6 @@ pub const Tensor = struct {
         self.allocator.free(transposed_data);
         return tensor;
     }
-    // Gaussian Jordan Elimination to inverse higher order matrices (3x3, 4,4 ... )
-    //pub fn gaussJordanElim(self: *Tensor) !f32 {
-    // These will be equal and this is checked in inverseVector before this function is reached
-    //var rows: usize = self.shape[0];
-    //var cols: usize = self.shape[1];
-    // }
 
     pub fn inverseVector(self: *Tensor) !Tensor {
         // to take an inverse mat must be square
@@ -219,4 +231,32 @@ pub const Tensor = struct {
             return TensorError.InvalidDimensions;
         }
     }
+
+    // Gaussian Jordan Elimination to inverse higher order matrices (3x3, 4,4 ... )s
+    pub fn gaussJordanElim(self: *Tensor) !f32 {
+        var clonedTensor: Tensor = try self.clone();
+        errdefer clonedTensor.deinit();
+
+        var identityMatrix: Tensor = self.initIdentityMatrix();
+        errdefer identityMatrix.deinit();
+
+        const n = self.shape[0];
+
+        for (0..n) |i| {
+            if (clonedTensor.get(i, i) == 0) {}
+        }
+    }
+
+    //////////////////// Gauss Jordan Helpers /////////////////////
+
+    // operation 1: Swap two rows
+    //pub fn swapRows(self: *Tensor, row_1: usize, row_2: usize) !void {
+    //  var tmp: []f32 = self.allocator.alloc(f32, self.shape[0]);
+    //}
+
+    // operation 2: scale a row by a non-zero val
+    //pub fn scaleRow(self: *Tensor, row_num: usize, scalar: usize) !void {}
+
+    // operation 3: add/subtract a non-zero scalar multiple of one row to another
+    //pub fn addScaledRow(self: *Tensor, src_row: usize, dest_row: usize) !void {}
 };
