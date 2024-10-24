@@ -85,6 +85,8 @@ pub const Tensor = struct {
         return self.data[(row * self.strides[0]) + (col * self.strides[1])];
     }
 
+    // @TODO possibility to change this down the road to copied so function is not returning the slice and giving ownership
+    // gets row specified, returns a slice allowing for manipulation.
     pub fn getRow(self: Tensor, row: usize) ![]f32 {
         if (row >= self.shape[0]) {
             return TensorError.OutOfBounds;
@@ -95,6 +97,7 @@ pub const Tensor = struct {
 
         return self.data[start_index..end_index];
     }
+
     //////////////////// TENSOR MATHEMATICAL FUNCTIONS  /////////////////////
     // @TODO initial implementation will be updating tensor in place but going forward may add field to return a new tensor
 
@@ -250,13 +253,68 @@ pub const Tensor = struct {
     //////////////////// Gauss Jordan Helpers /////////////////////
 
     // operation 1: Swap two rows
-    //pub fn swapRows(self: *Tensor, row_1: usize, row_2: usize) !void {
-    //  var tmp: []f32 = self.allocator.alloc(f32, self.shape[0]);
-    //}
+    pub fn swapRows(self: *Tensor, row_1: usize, row_2: usize) !void {
+        // Get size of rows
+        const row_size = self.shape[1];
+
+        // Allocate tmp storage
+        const tmp = try self.allocator.alloc(f32, row_size);
+        defer self.allocator.free(tmp);
+
+        const r1: []f32 = try self.getRow(row_1);
+        const r2: []f32 = try self.getRow(row_2);
+
+        // Copy row_1 to tmp
+        @memcpy(tmp, r1);
+
+        // Copy row_2 to row_1
+        @memcpy(r1, r2);
+
+        // Copy tmp (original row_1) to row_2
+        @memcpy(r2, tmp);
+    }
 
     // operation 2: scale a row by a non-zero val
-    //pub fn scaleRow(self: *Tensor, row_num: usize, scalar: usize) !void {}
+    pub fn scaleRow(self: *Tensor, row_num: usize, scalar: usize) !void {
+        const float_scalar: f32 = @floatFromInt(scalar);
+
+        var row: []f32 = try self.getRow(row_num);
+
+        for (0..self.shape[0]) |idx| {
+            row[idx] *= float_scalar;
+        }
+    }
 
     // operation 3: add/subtract a non-zero scalar multiple of one row to another
-    //pub fn addScaledRow(self: *Tensor, src_row: usize, dest_row: usize) !void {}
+    // operation is bool : true is addition false is subtraction
+    pub fn addScaledRow(self: *Tensor, src_row: usize, dest_row: usize, scalar: usize, operation: bool) !void {
+        const float_scalar: f32 = @floatFromInt(scalar);
+
+        const row_size = self.shape[1];
+
+        //create a tmp of the src_row to scale
+        const tmp = try self.allocator.alloc(f32, row_size);
+        defer self.allocator.free(tmp);
+
+        const src = try self.getRow(src_row);
+        const dest = try self.getRow(dest_row);
+
+        // copy src row into tmp
+        @memcpy(tmp, src);
+
+        // scale tmp
+        for (0..self.shape[0]) |i| {
+            tmp[i] *= float_scalar;
+        }
+
+        if (operation) {
+            for (0..self.shape[0]) |i| {
+                dest[i] += tmp[i];
+            }
+        } else {
+            for (0..self.shape[0]) |i| {
+                dest[i] -= tmp[i];
+            }
+        }
+    }
 };
