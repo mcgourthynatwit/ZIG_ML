@@ -2,7 +2,7 @@ const std = @import("std");
 const tensor_file = @import("tensor.zig");
 const Tensor = tensor_file.Tensor;
 
-pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn };
+pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn, InvalidFileType };
 
 const HeaderEntry = struct {
     header: []const u8,
@@ -34,15 +34,42 @@ pub const Table = struct {
         self.body.deinit();
     }
 
+    fn verifyFileType(file_name: []const u8) bool {
+        const extension_index = std.mem.lastIndexOf(u8, file_name, ".");
+        if (extension_index == null) {
+            return false;
+        }
+
+        // Get the extension (everything after the last '.')
+        const extension = file_name[extension_index.?..];
+
+        // Check if the extension is ".csv"
+        if (!std.mem.eql(u8, extension, ".csv")) {
+            return false;
+        }
+
+        return true;
+    }
     // Opens file that is passed, gets the number of bytes in the file and creates char [] buffer that holds ENTIRE CSV
     // @TODO may need to optimize as reading the ENTIRE buffer and storing that in single array will be inefficient for very large files.
+    // @TODO ensure that table is empty when reading
     pub fn readCsv(self: *Table, file_name: []const u8) !void {
+        const validFile: bool = verifyFileType(file_name);
+
+        if (!validFile) {
+            return TableError.InvalidFileType;
+        }
+
         const file = try std.fs.cwd().openFile(file_name, .{});
         defer file.close();
 
         // Get total bytes of file
         const file_size = try file.getEndPos();
 
+        // @TODO May want to change this to throw an error but if reading an empty CSV simply returns as the table passed to readCsv is empty
+        if (file_size == 0) {
+            return;
+        }
         // Create buf allocating the file size bytes
         const buffer = try self.allocator.alloc(u8, file_size);
         defer self.allocator.free(buffer);
