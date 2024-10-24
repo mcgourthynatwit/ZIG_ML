@@ -4,6 +4,8 @@ const Table = csv.Table;
 
 pub const TensorError = error{ InvalidDimensions, OutOfBounds, NonInvertibleMatrix };
 
+pub const RegressionResult = struct {};
+
 pub const Tensor = struct {
     data: []f32, // 1d flattened array continous in memory
     shape: []usize, // Shape [row, col]
@@ -242,7 +244,7 @@ pub const Tensor = struct {
     // Gaussian Jordan Elimination to inverse higher order matrices (3x3, 4,4 ... )s
     pub fn gaussJordanElim(self: *Tensor) !Tensor {
         const n = self.shape[0];
-        const round_error = 1e-5; // Add small round_error for floating point comparison
+        const round_error = 1e-3; // Add small round_error for floating point comparison
 
         var cloned_tensor: Tensor = try initTensor(self.allocator, n, n, self.data);
         errdefer cloned_tensor.deinit();
@@ -375,5 +377,37 @@ pub const Tensor = struct {
         for (0..self.shape[0]) |i| {
             dest[i] += tmp[i];
         }
+    }
+
+    //////////////////// ML /////////////////////
+
+    // OLS
+    pub fn linearRegression(X: Tensor, Y: Tensor) !Tensor {
+        // Calculate beta = (X^T X)^-1 X^T Y
+        var X_C: Tensor = try Tensor.initTensor(X.allocator, X.shape[0], X.shape[1], X.data);
+
+        // First transpose
+        var X_T: Tensor = try X_C.transpose();
+
+        // .matmul updates X_T in place
+        try X_T.matmul(X_C);
+        var beta: Tensor = try X_T.inverseVector();
+
+        // Clear X_T and set it to transposed again since it was modified above
+        X_T.deinit();
+
+        X_T = try X_C.transpose();
+
+        try beta.matmul(X_T);
+        try beta.matmul(Y);
+
+        try X_C.matmul(beta);
+
+        // Clean up
+        beta.deinit();
+        X_T.deinit();
+
+        // X_C is freed in the main file if it is freed here this function goes out of scope and incorrect results
+        return X_C;
     }
 };
