@@ -2,7 +2,7 @@ const std = @import("std");
 const csv = @import("csv.zig");
 const Table = csv.Table;
 
-pub const TensorError = error{ InvalidDimensions, OutOfBounds };
+pub const TensorError = error{ InvalidDimensions, OutOfBounds, NonInvertibleMatrix };
 
 pub const Tensor = struct {
     data: []f32, // 1d flattened array continous in memory
@@ -233,21 +233,91 @@ pub const Tensor = struct {
         if (self.shape[0] != self.shape[1]) {
             return TensorError.InvalidDimensions;
         }
+
+        const i_vector: Tensor = try self.gaussJordanElim();
+
+        return i_vector;
     }
 
     // Gaussian Jordan Elimination to inverse higher order matrices (3x3, 4,4 ... )s
-    pub fn gaussJordanElim(self: *Tensor) !f32 {
-        var clonedTensor: Tensor = try self.clone();
-        errdefer clonedTensor.deinit();
-
-        var identityMatrix: Tensor = self.initIdentityMatrix();
-        errdefer identityMatrix.deinit();
-
+    pub fn gaussJordanElim(self: *Tensor) !Tensor {
         const n = self.shape[0];
+        const round_error = 1e-5; // Add small round_error for floating point comparison
 
+        var cloned_tensor: Tensor = try initTensor(self.allocator, n, n, self.data);
+        errdefer cloned_tensor.deinit();
+
+        var identity_matrix: Tensor = try self.initIdentityMatrix();
+        errdefer identity_matrix.deinit();
+
+        // Forward elimination
         for (0..n) |i| {
-            if (clonedTensor.get(i, i) == 0) {}
+            // Find pivot in current col
+            var max_val: f32 = 0.0;
+            var max_row: usize = i;
+
+            // Find largest pivot in current column
+            for (i..n) |j| {
+                const val = @abs(try cloned_tensor.get(j, i));
+                if (val > max_val) {
+                    max_val = val;
+                    max_row = j;
+                }
+            }
+
+            // Check if matrix is singular(no pivots in col)
+            if (max_val < round_error) {
+                std.debug.print("Near-zero pivot found at column {}: {}\n", .{ i, max_val });
+                return TensorError.NonInvertibleMatrix;
+            }
+
+            // Swap maximum row with current row
+            if (max_row != i) {
+                try cloned_tensor.swapRows(i, max_row);
+                try identity_matrix.swapRows(i, max_row);
+            }
+
+            // Normalize current row by making pivot val 1.0
+            const diag: f32 = try cloned_tensor.get(i, i);
+            if (@abs(diag) < round_error) {
+                std.debug.print("Zero diagonal element after swap at {}\n", .{i});
+                return TensorError.NonInvertibleMatrix;
+            }
+
+            try cloned_tensor.scaleRow(i, 1.0 / diag);
+            try identity_matrix.scaleRow(i, 1.0 / diag);
+
+            // Eliminate col values in rows in current pivot
+            for (0..n) |j| {
+                // if idx is row that is not current pivot
+                if (j != i) {
+                    // get value of the cell below pivot
+                    const factor = try cloned_tensor.get(j, i);
+
+                    // if factor is a non-zero num
+                    if (@abs(factor) > round_error) {
+                        // We know that the pivot in the col is 1.0 in src_row, so this function essentially turns pivot col value in row j to 0.0.
+                        try cloned_tensor.addScaledRow(i, j, -factor);
+                        try identity_matrix.addScaledRow(i, j, -factor);
+                    }
+                }
+            }
         }
+
+        // Check final matrix is valid
+        for (0..n) |i| {
+            for (0..n) |j| {
+                const expected: f32 = if (i == j) 1.0 else 0.0; // verify that diagonal is 1.0 & other cells are 0.0
+                const actual: f32 = try cloned_tensor.get(i, j);
+                if (@abs(actual - expected) > round_error) {
+                    std.debug.print("Matrix not properly reduced at ({}, {}): expected {}, got {}\n", .{ i, j, expected, actual });
+                    return TensorError.NonInvertibleMatrix;
+                }
+            }
+        }
+
+        cloned_tensor.deinit();
+        return identity_matrix;
     }
 
     //////////////////// Gauss Jordan Helpers /////////////////////
@@ -275,21 +345,16 @@ pub const Tensor = struct {
     }
 
     // operation 2: scale a row by a non-zero val
-    pub fn scaleRow(self: *Tensor, row_num: usize, scalar: usize) !void {
-        const float_scalar: f32 = @floatFromInt(scalar);
-
+    pub fn scaleRow(self: *Tensor, row_num: usize, scalar: f32) !void {
         var row: []f32 = try self.getRow(row_num);
 
-        for (0..self.shape[0]) |idx| {
-            row[idx] *= float_scalar;
+        for (0..self.shape[1]) |idx| {
+            row[idx] *= scalar;
         }
     }
 
     // operation 3: add/subtract a non-zero scalar multiple of one row to another
-    // operation is bool : true is addition false is subtraction
-    pub fn addScaledRow(self: *Tensor, src_row: usize, dest_row: usize, scalar: usize, operation: bool) !void {
-        const float_scalar: f32 = @floatFromInt(scalar);
-
+    pub fn addScaledRow(self: *Tensor, src_row: usize, dest_row: usize, scalar: f32) !void {
         const row_size = self.shape[1];
 
         //create a tmp of the src_row to scale
@@ -304,17 +369,11 @@ pub const Tensor = struct {
 
         // scale tmp
         for (0..self.shape[0]) |i| {
-            tmp[i] *= float_scalar;
+            tmp[i] *= scalar;
         }
 
-        if (operation) {
-            for (0..self.shape[0]) |i| {
-                dest[i] += tmp[i];
-            }
-        } else {
-            for (0..self.shape[0]) |i| {
-                dest[i] -= tmp[i];
-            }
+        for (0..self.shape[0]) |i| {
+            dest[i] += tmp[i];
         }
     }
 };
