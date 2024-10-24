@@ -36,7 +36,7 @@ pub const Table = struct {
 
     // Opens file that is passed, gets the number of bytes in the file and creates char [] buffer that holds ENTIRE CSV
     // @TODO may need to optimize as reading the ENTIRE buffer and storing that in single array will be inefficient for very large files.
-    pub fn readCsv(allocator: std.mem.Allocator, file_name: []const u8) ![]const u8 {
+    pub fn readCsv(self: *Table, file_name: []const u8) !void {
         const file = try std.fs.cwd().openFile(file_name, .{});
         defer file.close();
 
@@ -44,15 +44,16 @@ pub const Table = struct {
         const file_size = try file.getEndPos();
 
         // Create buf allocating the file size bytes
-        const buffer = try allocator.alloc(u8, file_size);
-        errdefer allocator.free(buffer);
+        const buffer = try self.allocator.alloc(u8, file_size);
+        defer self.allocator.free(buffer);
 
         // Read all bytes of file & store in buffer
         const bytes_read = try file.readAll(buffer);
 
         std.debug.assert(bytes_read == file_size);
 
-        return buffer;
+        // parse CSV
+        try self.parse(buffer);
     }
 
     // Add header to table

@@ -4,7 +4,15 @@ const Table = csv.Table;
 
 pub const TensorError = error{ InvalidDimensions, OutOfBounds, NonInvertibleMatrix };
 
-pub const RegressionResult = struct {};
+pub const RegressionResult = struct {
+    r_squared: f32,
+    p_values: []f32,
+    t_statistics: []f32,
+    mse: f32,
+    mae: f32,
+    rmse: f32,
+    predictions: []f32,
+};
 
 pub const Tensor = struct {
     data: []f32, // 1d flattened array continous in memory
