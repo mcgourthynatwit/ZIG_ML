@@ -1,13 +1,13 @@
 # ZigML: Data Analysis and Machine Learning in Zig
 
-A performant and memory efficient data analysis and machine learning library written in Zig. 
+A performant and memory-efficient data analysis and machine learning library written in Zig.
 
 ## Features
 ### Table Operations
 - CSV reading
 - Dataframe object
-- DataFrame Filter
-- DataFrame to Tensor for ML
+- DataFrame filtering
+- DataFrame to Tensor for machine learning
 
 ### Machine Learning
 - Linear Models
@@ -15,7 +15,7 @@ A performant and memory efficient data analysis and machine learning library wri
 - [In development] Lasso Regression
 - [In development] Ridge Regression
 
-## Instalation
+## Installation
 ```bash
 git clone https://github.com/mcgourthynatwit/ZIG_ML.git
 cd ZIG_ML
@@ -32,10 +32,13 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
   
+    // Initialize and read CSV file
     var table: Table = Table.init(allocator);
     try table.readCsv("data.csv");
     defer table.deinit();
 
+    // Display the first 5 rows of the table
     try table.head();
 }
+
 ```
