@@ -243,10 +243,12 @@ pub const Table = struct {
     }
 
     // Helper function for filter that parses a row of an original table and only appends the cells in specified cols
-    pub fn addFilteredRow(line: std.ArrayList([]const u8), cols: std.AutoHashMap(usize, void), row: *std.ArrayList([]const u8)) !void {
+    pub fn addFilteredRow(allocator: std.mem.Allocator, line: std.ArrayList([]const u8), cols: std.AutoHashMap(usize, void), row: *std.ArrayList([]const u8)) !void {
         for (0.., line.items) |idx, cell| {
             if (cols.contains(idx)) {
-                try row.append(cell);
+                const owned_cell = try allocator.dupe(u8, cell);
+
+                try row.append(owned_cell);
             }
         }
     }
@@ -279,7 +281,9 @@ pub const Table = struct {
         // Put filtered headers into filter Table
         for (headers) |header| {
             if (filter_map.contains(header.index)) {
-                try filtered_table.addHeader(header.header);
+                const owned_header = try self.allocator.dupe(u8, header.header);
+
+                try filtered_table.addHeader(owned_header);
             }
         }
 
@@ -297,7 +301,7 @@ pub const Table = struct {
 
         // Iterate through rows of original table and use helper func to process & append
         for (self.body.items) |unfiltered_row| {
-            try addFilteredRow(unfiltered_row, filter_map, &row);
+            try addFilteredRow(self.allocator, unfiltered_row, filter_map, &row);
 
             try filtered_table.body.append(try row.clone());
             row.clearRetainingCapacity();

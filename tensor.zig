@@ -173,14 +173,6 @@ pub const Tensor = struct {
         self.strides[1] = 1;
     }
 
-    //pub fn transpose(self: *Tensor) !Tensor {}
-
-    //pub fn matrixInv(self: *Tensor) !Tensor {a}
-
-    // @TODO
-    // Multiplies two tensors in place
-    //pub fn multiply(self: *Tensor, other: *Tensor) !void {}
-
     pub fn initIdentityMatrix(self: *Tensor) !Tensor {
         const tensor_size = self.shape[0] * self.shape[1];
 
@@ -388,6 +380,17 @@ pub const Tensor = struct {
     }
 
     //////////////////// ML /////////////////////
+    pub fn mean(T: Tensor) f32 {
+        const n: f32 = @as(f32, @floatFromInt(T.data.len));
+        var sum: f32 = 0.0;
+
+        for (T.data) |val| {
+            sum += val;
+        }
+        return sum / n;
+    }
+
+    //pub fn r2(Y_A: Tensor, Y_P: Tensor) !Tensor {}
 
     // OLS
     pub fn linearRegression(X: Tensor, Y: Tensor) !Tensor {
@@ -414,8 +417,17 @@ pub const Tensor = struct {
         // Clean up
         beta.deinit();
         X_T.deinit();
+        defer X_C.deinit();
 
-        // X_C is freed in the main file if it is freed here this function goes out of scope and incorrect results
+        // X_C is the result tensor, calculate results
+        //var r_squared: f32 = 0.0;
+        //var p_values: []f32 = {};
+        //var t_statistics: []f32 = {};
+        //var mse: f32 = 0.0;
+        //var mae: f32 = 0.0;
+        //var vrmse: f32 = 0.0;
+        //var predictions: []f32 = {};
+
         return X_C;
     }
 };
