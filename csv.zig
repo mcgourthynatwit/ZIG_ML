@@ -26,9 +26,18 @@ pub const Table = struct {
 
     // Free's memory stored in the ArrayLists of headers & body of table
     pub fn deinit(self: *Table) void {
+        var header_it = self.headers.iterator();
+        while (header_it.next()) |entry| {
+            // Free the header strings
+            self.allocator.free(entry.key_ptr.*);
+        }
         self.headers.deinit();
 
         for (self.body.items) |*row| {
+            // Free each string in the row
+            for (row.items) |str| {
+                self.allocator.free(str);
+            }
             row.deinit();
         }
         self.body.deinit();
@@ -98,8 +107,10 @@ pub const Table = struct {
             // Trim any unecessary text
             const trimmed_item = std.mem.trim(u8, item, " \r\n");
 
-            // Append to headers
-            try self.addHeader(trimmed_item);
+            // Dupe memory from buffer read as this is freed one readCsv exits
+            const owned_header = try self.allocator.dupe(u8, trimmed_item);
+            // Add dupe
+            try self.addHeader(owned_header);
         }
     }
 
@@ -111,8 +122,10 @@ pub const Table = struct {
             // Trim any unecessary text
             const trimmed = std.mem.trim(u8, field, " \t\r\n");
 
-            // Append to row
-            try row.append(trimmed);
+            // Dupe memory from buffer read as this is freed one readCsv exits
+            const owned_str = try self.allocator.dupe(u8, trimmed);
+            // Add dupe
+            try row.append(owned_str);
         }
 
         // Pad with empty strings if necessary
@@ -221,11 +234,7 @@ pub const Table = struct {
         // compare by index
         const compare = struct {
             fn compareByIndex(_: void, a: HeaderEntry, b: HeaderEntry) bool {
-                if (a.index < b.index) {
-                    return true;
-                } else {
-                    return false;
-                }
+                return a.index < b.index;
             }
         };
 
