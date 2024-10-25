@@ -1,2 +1,41 @@
-Data sourced from 
-https://www.kaggle.com/datasets/fournierp/captcha-version-2-images
+# ZigML: Data Analysis and Machine Learning in Zig
+
+A performant and memory efficient data analysis and machine learning library written in Zig. 
+
+## Features
+### Table Operations
+- CSV reading
+- Dataframe object
+- DataFrame Filter
+- DataFrame to Tensor for ML
+
+### Machine Learning
+- Linear Models
+- OLS Regression
+- [In development] Lasso Regression
+- [In development] Ridge Regression
+
+## Instalation
+```bash
+git clone https://github.com/mcgourthynatwit/ZIG_ML.git
+cd ZIG_ML
+zig build
+```
+
+## Quick Start
+```zig
+const std = @import("std");
+const Table = @import("csv.zig").Table;
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+  
+    var table: Table = Table.init(allocator);
+    try table.readCsv("data.csv");
+    defer table.deinit();
+
+    try table.head();
+}
+```
