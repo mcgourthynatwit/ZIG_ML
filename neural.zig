@@ -18,13 +18,13 @@ pub const ActivationFn = enum {
 
 pub const ForwardResult = struct {
     layer_output: std.ArrayList(Tensor),
-    prediction: Tensor,
+    prediction: *Tensor,
 
     pub fn deinit(self: *ForwardResult) void {
-        for (self.activations.items) |*activation| {
+        for (self.layer_output.items) |*activation| {
             activation.deinit();
         }
-        self.activations.deinit();
+        self.layer_output.deinit();
     }
 };
 
@@ -56,30 +56,30 @@ pub const NN = struct {
         self.layers.deinit();
     }
 
-    fn relu(vals: []f32) void {
-        for (vals) |*val| {
+    fn relu(vals: *[]f32) void {
+        for (vals.*) |*val| {
             val.* = @max(0.0, val.*);
         }
     }
 
-    fn softmax(vals: []f32) void {
+    fn softmax(vals: *[]f32) void {
         var sum: f32 = 0.0;
 
         // store max_val to eliminate any overflow with large #'s
         var max_val: f32 = -std.math.inf(f32);
 
-        for (vals) |val| {
+        for (vals.*) |val| {
             max_val = @max(max_val, val);
         }
 
         // Exponentiate each value, adjusted by the max, and calculate the sum
-        for (vals) |*val| {
+        for (vals.*) |*val| {
             val.* = @exp(val.* - max_val);
             sum += val.*;
         }
 
         // Normalize each val to a probability
-        for (vals) |*val| {
+        for (vals.*) |*val| {
             val.* /= sum;
         }
     }
@@ -144,34 +144,49 @@ pub const NN = struct {
         try self.layers.append(layer);
     }
 
-    fn forwardProp(self: *NN, input: *Tensor) !ForwardResult {
+    pub fn forwardProp(self: *NN, input: Tensor) !ForwardResult {
         var layer_outputs = std.ArrayList(Tensor).init(self.allocator);
 
-        // add input layer
-        try layer_outputs.append(try input.clone(self.allocator));
+        errdefer {
+            for (layer_outputs.items) |*tensor| {
+                tensor.deinit();
+            }
+            layer_outputs.deinit();
+        }
+
+        var input_clone: Tensor = try input.clone();
+        errdefer input_clone.deinit();
+
+        try layer_outputs.append(input_clone);
+
+        if (self.layers.items.len < 1) {
+            return NNError.InvalidShape;
+        }
 
         for (self.layers.items[1..], 0..) |layer, i| {
-            var current: Tensor = try layer_outputs.items[i].clone(self.allocator);
+            var current_clone = try layer_outputs.items[i].clone();
+            errdefer current_clone.deinit();
 
-            try current.matmul(layer.weights);
-            try current.add(layer.bias);
+            try current_clone.matmul(layer.weights.?);
+            try current_clone.addBias(layer.bias.?);
             switch (layer.activation) {
                 .ReLU => {
-                    relu(&current.data);
+                    relu(&current_clone.data);
                 },
                 .Softmax => {
-                    softmax(&current.data);
+                    softmax(&current_clone.data);
                 },
             }
 
-            try layer_outputs.append(current);
+            try layer_outputs.append(current_clone);
         }
 
-        return ForwardResult{
-            .activations = layer_outputs,
-            .prediction = layer_outputs.items[layer_outputs.items.len - 1],
-        };
+        const last_tensor = &layer_outputs.items[layer_outputs.items.len - 1];
+
+        return ForwardResult{ .layer_output = layer_outputs, .prediction = last_tensor };
     }
+
+    //fn crossEntropy(actual: Tensor, prediction: Tensor) !void {}
 
     fn backProp() !void {}
 

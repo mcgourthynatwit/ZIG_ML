@@ -85,6 +85,21 @@ pub const Tensor = struct {
         };
     }
 
+    pub fn clone(self: *const Tensor) !Tensor {
+        // Create new data array
+        const tensor_size = self.shape[0] * self.shape[1];
+        const new_data = try self.allocator.alloc(f32, tensor_size);
+
+        // Copy data
+        @memcpy(new_data, self.data[0..tensor_size]);
+
+        // defer freeing the []f32 arr after tensor is created
+        defer self.allocator.free(new_data);
+
+        // Create new tensor
+        return Tensor.initTensor(self.allocator, self.shape[0], self.shape[1], new_data);
+    }
+
     // gets the value at the row/col passed, helper function for Gauss Jordan
     pub fn get(self: Tensor, row: usize, col: usize) !f32 {
         if (row >= self.shape[0] or col >= self.shape[1]) {
@@ -169,6 +184,19 @@ pub const Tensor = struct {
         self.shape[1] = cols;
         self.strides[0] = cols;
         self.strides[1] = 1;
+    }
+
+    pub fn addBias(self: *Tensor, bias: Tensor) !void {
+        // There needs to be 1 bias for each row(neuron)
+        if (self.shape[1] != bias.shape[1]) {
+            return TensorError.InvalidDimensions;
+        }
+
+        for (0..self.shape[0]) |row| {
+            for (0..self.shape[1]) |col| {
+                self.data[(row * self.strides[0]) + (col * self.strides[1])] += bias.data[row];
+            }
+        }
     }
 
     pub fn initIdentityMatrix(self: *Tensor) !Tensor {
