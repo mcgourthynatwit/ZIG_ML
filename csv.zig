@@ -11,6 +11,7 @@ const HeaderEntry = struct {
 
 // @TODO adjust Table & add enum to handle floats
 pub const Table = struct {
+    source_data: ?[]const u8,
     allocator: std.mem.Allocator,
     body: std.ArrayListAligned(std.ArrayList([]const u8), null),
     headers: std.StringHashMap(usize),
@@ -18,26 +19,26 @@ pub const Table = struct {
     // Creates empty Table struct
     pub fn init(allocator: std.mem.Allocator) Table {
         return Table{
+            .source_data = null,
             .allocator = allocator,
             .body = std.ArrayList(std.ArrayList([]const u8)).init(allocator),
             .headers = std.StringHashMap(usize).init(allocator),
         };
     }
 
-    // Free's memory stored in the ArrayLists of headers & body of table
     pub fn deinit(self: *Table) void {
+        if (self.source_data) |data| {
+            self.allocator.free(data);
+        }
+
+        // Header & Data are slices of source_data, just need to free the ArrayList not the individual strings
         var header_it = self.headers.iterator();
         while (header_it.next()) |entry| {
-            // Free the header strings
-            self.allocator.free(entry.key_ptr.*);
+            _ = entry;
         }
         self.headers.deinit();
 
         for (self.body.items) |*row| {
-            // Free each string in the row
-            for (row.items) |str| {
-                self.allocator.free(str);
-            }
             row.deinit();
         }
         self.body.deinit();
@@ -79,14 +80,22 @@ pub const Table = struct {
         if (file_size == 0) {
             return;
         }
+
+        if (self.source_data) |old_data| {
+            self.allocator.free(old_data);
+            self.source_data = null;
+        }
+
         // Create buf allocating the file size bytes
         const buffer = try self.allocator.alloc(u8, file_size);
-        defer self.allocator.free(buffer);
 
         // Read all bytes of file & store in buffer
         const bytes_read = try file.readAll(buffer);
 
         std.debug.assert(bytes_read == file_size);
+
+        self.source_data = buffer;
+        errdefer self.allocator.free(buffer);
 
         // parse CSV
         try self.parse(buffer);
@@ -107,10 +116,7 @@ pub const Table = struct {
             // Trim any unecessary text
             const trimmed_item = std.mem.trim(u8, item, " \r\n");
 
-            // Dupe memory from buffer read as this is freed one readCsv exits
-            const owned_header = try self.allocator.dupe(u8, trimmed_item);
-            // Add dupe
-            try self.addHeader(owned_header);
+            try self.addHeader(trimmed_item);
         }
     }
 
@@ -122,10 +128,7 @@ pub const Table = struct {
             // Trim any unecessary text
             const trimmed = std.mem.trim(u8, field, " \t\r\n");
 
-            // Dupe memory from buffer read as this is freed one readCsv exits
-            const owned_str = try self.allocator.dupe(u8, trimmed);
-            // Add dupe
-            try row.append(owned_str);
+            try row.append(trimmed);
         }
 
         // Pad with empty strings if necessary

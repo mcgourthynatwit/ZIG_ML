@@ -2,6 +2,8 @@ const std = @import("std");
 const expect = std.testing.expect;
 const Table = @import("csv.zig").Table;
 const TableError = @import("csv.zig").TableError;
+const Tensor = @import("tensor.zig").Tensor;
+const TensorError = @import("tensor.zig").TensorError;
 
 //////////////////// CSV /////////////////////
 
@@ -178,6 +180,43 @@ test "parse_large_csv" {
 }
 
 //////////////////// Tensor /////////////////////
+test "tensor_init_1" {}
+
+test "tensor_init_2" {}
+
+test "tensor_init_3" {}
+
+test "tensor_operations_1" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const tensor_data_1 = [_]f32{ 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 };
+    const tensor_data_2 = [_]f32{ 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 };
+
+    var tensor_1: Tensor = try Tensor.initTensor(allocator, 2, 3, &tensor_data_1);
+    var tensor_2: Tensor = try Tensor.initTensor(allocator, 3, 2, &tensor_data_2);
+
+    defer tensor_1.deinit();
+    defer tensor_2.deinit();
+
+    try expect(tensor_1.shape[0] == 2);
+    try expect(tensor_1.shape[1] == 3);
+
+    try expect(tensor_2.shape[0] == 3);
+    try expect(tensor_2.shape[1] == 2);
+
+    try tensor_1.matmul(tensor_2);
+
+    try expect(tensor_1.shape[0] == 2);
+    try expect(tensor_1.shape[1] == 2);
+
+    try expect(std.mem.eql(f32, tensor_1.data[0..4], &[_]f32{ 22.0, 28.0, 49.0, 64.0 }));
+}
+
+test "tensor_operations_2" {}
+
+test "tensor_operations_3" {}
 
 //////////////////// Integration Tests /////////////////////
 
