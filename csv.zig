@@ -2,7 +2,7 @@ const std = @import("std");
 const tensor_file = @import("tensor.zig");
 const Tensor = tensor_file.Tensor;
 
-pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn, InvalidFileType };
+pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn, InvalidDropAllColumns, InvalidFileType };
 
 const HeaderEntry = struct {
     header: []const u8,
@@ -27,21 +27,40 @@ pub const Table = struct {
     }
 
     pub fn deinit(self: *Table) void {
+        // For original that holds buffer in source_data
         if (self.source_data) |data| {
             self.allocator.free(data);
-        }
 
-        // Header & Data are slices of source_data, just need to free the ArrayList not the individual strings
-        var header_it = self.headers.iterator();
-        while (header_it.next()) |entry| {
-            _ = entry;
-        }
-        self.headers.deinit();
+            // Header & Data are slices of source_data, just need to free the ArrayList not the individual strings
+            var header_it = self.headers.iterator();
+            while (header_it.next()) |entry| {
+                _ = entry;
+            }
+            self.headers.deinit();
 
-        for (self.body.items) |*row| {
-            row.deinit();
+            for (self.body.items) |*row| {
+                row.deinit();
+            }
+            self.body.deinit();
         }
-        self.body.deinit();
+        // For filtered that are duplicates in different memory then original, need to individaully free header and body strings
+        else {
+            var header_it = self.headers.iterator();
+            while (header_it.next()) |entry| {
+                // Free the header strings
+                self.allocator.free(entry.key_ptr.*);
+            }
+            self.headers.deinit();
+
+            for (self.body.items) |*row| {
+                // Free each string in the row
+                for (row.items) |str| {
+                    self.allocator.free(str);
+                }
+                row.deinit();
+            }
+            self.body.deinit();
+        }
     }
 
     fn verifyFileType(file_name: []const u8) bool {
@@ -259,6 +278,10 @@ pub const Table = struct {
     // @TODO There is certainly some way to optimize this, zig can utilize c++ API wonder if we can integrate CUDA
     // Returns a new Table that is subset of input table containing filtered rows
     pub fn filter(self: *Table, allocator: std.mem.Allocator, cols: []const []const u8) !Table {
+        if (cols.len == 0 or cols.len > self.headers.count()) {
+            return TableError.InvalidColumn;
+        }
+
         // Hashmap to store col index for quick lookup
         var filter_map = std.AutoHashMap(usize, void).init(self.allocator);
         defer filter_map.deinit();
@@ -322,19 +345,55 @@ pub const Table = struct {
         return TableError.InvalidColumn;
     }
 
-    // Drops specified cols of a table inplace
-    pub fn drop(self: *Table, cols: [][]u8) !void {
+    // Drops specified cols of a table returning a new table
+    pub fn drop(self: *Table, allocator: std.mem.Allocator, cols: []const []const u8) !Table {
         const dropped_num: usize = cols.len;
-        var drop_map = std.AutoHashMap(dropped_num, void).init(self.allocator);
+        if (dropped_num == 0 or dropped_num > self.headers.count()) {
+            return TableError.InvalidColumn;
+        }
+
+        // Create a map to track indices to drop
+        var drop_map = std.AutoHashMap(usize, void).init(allocator);
         defer drop_map.deinit();
 
+        // Validate columns and collect their indices
         for (cols) |col| {
             if (!self.headerExists(col)) {
                 return TableError.InvalidColumn;
             }
             const colIdx = try self.getHeaderIdx(col);
-            drop_map.put(colIdx);
+            try drop_map.put(colIdx, {});
         }
+
+        // If they try and drop all raise error
+        if (drop_map.count() == self.headers.count()) {
+            return TableError.InvalidDropAllColumns;
+        }
+
+        // Else build out array of remaining columns
+        var remaining_cols = std.ArrayList([]const u8).init(allocator);
+        defer {
+            for (remaining_cols.items) |item| {
+                allocator.free(item);
+            }
+            remaining_cols.deinit();
+        }
+
+        var header_iter = self.headers.iterator();
+
+        // Collect remaining columns
+        while (header_iter.next()) |entry| {
+            const idx = entry.value_ptr.*;
+            if (!drop_map.contains(idx)) {
+                try remaining_cols.append(try allocator.dupe(u8, entry.key_ptr.*));
+            }
+        }
+
+        // call filter with remaining columns
+        const new_table: Table = try self.filter(allocator, remaining_cols.items);
+        errdefer new_table.deinit();
+
+        return new_table;
     }
 
     // @TODO adjust for handling of strings
