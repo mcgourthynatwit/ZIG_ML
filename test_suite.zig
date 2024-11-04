@@ -129,10 +129,18 @@ test "parse_med_csv" {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
     var table_1: Table = Table.init(allocator);
+    defer table_1.deinit();
+
+    const start_time: i128 = std.time.nanoTimestamp();
 
     try table_1.readCsv("test_data/med_data.csv");
 
-    defer table_1.deinit();
+    const end_time: i128 = std.time.nanoTimestamp();
+
+    const time_read_seconds: f64 = @as(f64, @floatFromInt(end_time - start_time)) / 1_000_000_000.0;
+
+    // normal zig build
+    try expect(time_read_seconds < 0.01);
 
     // Check columns
     const header_count = table_1.headers.count();
@@ -157,10 +165,21 @@ test "parse_large_csv" {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
     var table_1: Table = Table.init(allocator);
+    defer table_1.deinit();
+
+    const start_time: i128 = std.time.nanoTimestamp();
 
     try table_1.readCsv("test_data/large_data.csv");
 
-    defer table_1.deinit();
+    const end_time: i128 = std.time.nanoTimestamp();
+
+    const time_read_seconds: f64 = @as(f64, @floatFromInt(end_time - start_time)) / 1_000_000_000.0;
+
+    // 6.5 for normal zig build
+    try expect(time_read_seconds < 6.5);
+
+    // sub 1.0 for -O ReleaseFast
+    // try expect(time_read_seconds < 1.0);
 
     // Check columns
     const header_count = table_1.headers.count();
@@ -373,5 +392,67 @@ test "tensor_dot_product" {
 //////////////////// Integration Tests /////////////////////
 
 //////////////////// CSV -> Tensor /////////////////////
+
+test "csv_tensor_1" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var table_1: Table = Table.init(allocator);
+    var table_2: Table = Table.init(allocator);
+
+    try table_1.readCsv("test_data/tensor_1.csv");
+    try table_2.readCsv("test_data/tensor_2.csv");
+
+    try expect(table_1.body.items.len == 5);
+    try expect(table_1.headers.count() == 4);
+
+    try expect(table_2.body.items.len == 4);
+    try expect(table_2.headers.count() == 4);
+
+    defer table_1.deinit();
+    defer table_2.deinit();
+
+    var tensor_1: Tensor = try table_1.toTensor(allocator);
+    var tensor_2: Tensor = try table_2.toTensor(allocator);
+
+    defer tensor_1.deinit();
+    defer tensor_2.deinit();
+
+    // Ensure that the shape of the tensor is the same when converted from table
+    try expect(tensor_1.shape[0] == table_1.body.items.len);
+    try expect(tensor_1.shape[1] == table_1.headers.count());
+
+    try expect(tensor_2.shape[0] == table_2.body.items.len);
+    try expect(tensor_2.shape[1] == table_2.headers.count());
+
+    // produces 5 x 4 matrix
+    try tensor_1.matmul(tensor_2);
+
+    try expect(tensor_1.shape[0] == table_1.body.items.len);
+    try expect(tensor_1.shape[1] == table_2.headers.count());
+
+    // produces 4 x 5 matrix
+    var tensor_1_transposed: Tensor = try tensor_1.transpose();
+    defer tensor_1_transposed.deinit();
+
+    try expect(tensor_1_transposed.shape[0] == table_2.headers.count());
+    try expect(tensor_1_transposed.shape[1] == table_1.body.items.len);
+
+    // Invalid dimensions 4 x 5
+    if (tensor_1_transposed.matmul(tensor_2)) |_| {
+        return error.TestUnexpectedResult;
+    } else |err| {
+        try expect(err == TensorError.InvalidDimensions);
+    }
+
+    try tensor_1_transposed.matmul(tensor_1);
+    try expect(tensor_1_transposed.shape[0] == 4);
+    try expect(tensor_1_transposed.shape[1] == 4);
+}
+
+test "csv_tensor_2" {}
+
+test "csv_tensor_3" {}
 
 //////////////////// CSV -> Tensor -> neural /////////////////////
