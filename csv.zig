@@ -121,14 +121,14 @@ pub const Table = struct {
     }
 
     // Add header to table
-    pub fn addHeader(self: *Table, header: []const u8) !void {
+    fn addHeader(self: *Table, header: []const u8) !void {
         const index = self.headers.count();
         try self.headers.put(header, index);
     }
 
     // Helper for parse()
     // Gets the headers of the CSV and directly appends those to self.headers
-    pub fn parseHeader(self: *Table, header_line: []const u8) !void {
+    fn parseHeader(self: *Table, header_line: []const u8) !void {
         var header_items = std.mem.split(u8, header_line, ",");
         self.headers.clearAndFree();
         while (header_items.next()) |item| {
@@ -159,7 +159,7 @@ pub const Table = struct {
     // Splits rows in csv_data by '\n', extracts the headers (Assumes first row is the header) @TODO add param that first line ISNOT header.
     // Counts num_cols then estimates the number of rows & allocates table.body arrayList.
     // Iterates through rows & adds each line to table.body.
-    pub fn parse(self: *Table, csv_data: []const u8) TableError!void {
+    fn parse(self: *Table, csv_data: []const u8) TableError!void {
         // Split by delimiter of row
         var rows = std.mem.split(u8, csv_data, "\n");
 
@@ -237,13 +237,13 @@ pub const Table = struct {
     }
 
     // Check to see if header exists in table
-    pub fn headerExists(self: *Table, header: []const u8) bool {
+    fn headerExists(self: *Table, header: []const u8) bool {
         return self.headers.contains(header);
     }
 
     // Helper function for head or when printing out, since hashmap does not store the
     // headers in the order they where added we need to sort and print.
-    pub fn sortHeaders(self: *Table, headers: *[]HeaderEntry) !void {
+    fn sortHeaders(self: *Table, headers: *[]HeaderEntry) !void {
         var it = self.headers.iterator();
         var i: usize = 0;
 
@@ -265,7 +265,7 @@ pub const Table = struct {
     }
 
     // Helper function for filter that parses a row of an original table and only appends the cells in specified cols
-    pub fn addFilteredRow(allocator: std.mem.Allocator, line: std.ArrayList([]const u8), cols: std.AutoHashMap(usize, void), row: *std.ArrayList([]const u8)) !void {
+    fn addFilteredRow(allocator: std.mem.Allocator, line: std.ArrayList([]const u8), cols: std.AutoHashMap(usize, void), row: *std.ArrayList([]const u8)) !void {
         for (0.., line.items) |idx, cell| {
             if (cols.contains(idx)) {
                 const owned_cell = try allocator.dupe(u8, cell);
@@ -337,7 +337,7 @@ pub const Table = struct {
     }
 
     // Gets the index of the header of a table
-    pub fn getHeaderIdx(self: *Table, col: []const u8) !usize {
+    fn getHeaderIdx(self: *Table, col: []const u8) !usize {
         if (self.headers.get(col)) |idx| {
             return idx;
         }
