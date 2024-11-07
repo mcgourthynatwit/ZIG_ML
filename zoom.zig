@@ -34,7 +34,15 @@ pub const DataFrame = struct {
 
     pub fn readCsv(allocator: std.mem.Allocator, file_name: []const u8) !DataFrame {
         var df = try DataFrame.init(allocator);
+        const start_time: i128 = std.time.nanoTimestamp();
+
         try df.table.readCsvTable(file_name);
+
+        const end_time: i128 = std.time.nanoTimestamp();
+        const time_read_seconds: f64 = @as(f64, @floatFromInt(end_time - start_time)) / 1_000_000_000.0;
+
+        std.debug.print("Parsed csv in {d} seconds.\n", .{time_read_seconds});
+
         return df;
     }
 

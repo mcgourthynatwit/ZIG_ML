@@ -89,6 +89,7 @@ pub const Table = struct {
 
         return true;
     }
+
     // Opens file that is passed, gets the number of bytes in the file and creates char [] buffer that holds ENTIRE CSV
     // @TODO may need to optimize as reading the ENTIRE buffer and storing that in single array will be inefficient for very large files.
     // @TODO ensure that table is empty when reading
@@ -163,55 +164,69 @@ pub const Table = struct {
         }
     }
 
-    // Helper for parse()
-    // Splits the line passed by "," & iterates through this split char array trimming any unecessary text ("\t\r\n") & appends to row.
-    fn parseLine(line: []const u8, row: *std.ArrayList(DataPoint)) !void {
-        var it = std.mem.split(u8, line, ",");
-        while (it.next()) |field| {
-            // Trim any unecessary text
-            const trimmed: []const u8 = std.mem.trim(u8, field, " \t\r\n");
-            const trimmedDataPoint: DataPoint = try parseDatapoint(trimmed);
-            try row.append(trimmedDataPoint);
-        }
-    }
-
     // Splits rows in csv_data by '\n', extracts the headers (Assumes first row is the header) @TODO add param that first line ISNOT header.
     // Counts num_cols then estimates the number of rows & allocates table.body arrayList.
     // Iterates through rows & adds each line to table.body.
     fn parse(self: *Table, csv_data: []const u8) TableError!void {
-        // Split by delimiter of row
-        var rows = std.mem.split(u8, csv_data, "\n");
-
         // Ensure header & body are empty
         self.headers.clearAndFree();
         self.body.clearAndFree();
 
-        // Assume first row is header and parse headers using parseHeader()
-        if (rows.next()) |header_line| {
-            try self.parseHeader(header_line);
-        } else {
+        var ptr_1: usize = 0;
+        var ptr_2: usize = 0;
+
+        // Find end of first line
+        while (ptr_2 < csv_data.len and csv_data[ptr_2] != '\n') {
+            ptr_2 += 1;
+        }
+
+        // Ensure we have a header
+        if (ptr_2 <= ptr_1) {
             return TableError.MissingHeader;
         }
 
+        try self.parseHeader(csv_data[ptr_1..ptr_2]);
         const num_cols = self.headers.count();
 
-        // Estimated rows = total bytes of buffer / (cols * 7) ~ 7 is a an estimate of num bytes per cell this can be changed as testing proceeds
+        // Estimated rows calculation
         const estimated_rows = csv_data.len / (num_cols * 7);
-
-        // Allocate estimate
         try self.body.ensureTotalCapacity(estimated_rows);
 
-        // Store row data that will be appened onto self.body
+        // Store row data that will be appended onto self.body
         var row = try std.ArrayList(DataPoint).initCapacity(self.allocator, num_cols);
         defer row.deinit();
 
-        while (rows.next()) |line| {
-            if (std.mem.trim(u8, line, " \r\n").len == 0) continue;
-            try parseLine(line, &row);
+        // Skip past header and newline
+        ptr_1 = ptr_2 + 1;
+        ptr_2 = ptr_1;
 
-            // Append clone of row & clear row for next iteration
+        // Parse body rows
+        while (ptr_2 < csv_data.len) {
+            if (csv_data[ptr_2] == ',') {
+                if (ptr_2 > ptr_1) {
+                    const cellDataPoint = try parseDatapoint(csv_data[ptr_1..ptr_2]);
+                    try row.append(cellDataPoint);
+                }
+                ptr_1 = ptr_2 + 1; // Skip past the comma
+            } else if (csv_data[ptr_2] == '\n') {
+                if (ptr_2 > ptr_1) {
+                    const cellDataPoint = try parseDatapoint(csv_data[ptr_1..ptr_2]);
+                    try row.append(cellDataPoint);
+                }
+                if (row.items.len > 0) {
+                    try self.body.append(try row.clone());
+                    row.clearRetainingCapacity();
+                }
+                ptr_1 = ptr_2 + 1; // Skip past the newline
+            }
+            ptr_2 += 1;
+        }
+
+        // Handle last row if it doesn't end with a newline
+        if (ptr_2 > ptr_1) {
+            const cellDataPoint = try parseDatapoint(csv_data[ptr_1..ptr_2]);
+            try row.append(cellDataPoint);
             try self.body.append(try row.clone());
-            row.clearRetainingCapacity();
         }
     }
 
