@@ -1,9 +1,7 @@
-// Forward Facing API
-
 const std = @import("std");
-const Tensor = @import("tensor.zig").Tensor;
+
 const Table = @import("csv.zig").Table;
-const Neural = @import("Neural.zig").NN;
+const TensorObject = @import("tensor.zig").Tensor;
 
 pub const Zoom = struct {
     allocator: std.mem.Allocator,
@@ -13,11 +11,112 @@ pub const Zoom = struct {
             .allocator = allocator,
         };
     }
+};
 
-    pub fn read_csv(self: *Zoom, file_name: []const u8) !*Table {
-        var table: Table = Table.init(self.allocator);
-        try table.readCsv(file_name);
+pub const DataFrame = struct {
+    table: Table,
 
-        return &table;
+    pub fn init(allocator: std.mem.Allocator) !DataFrame {
+        const table = Table{
+            .source_data = null,
+            .allocator = allocator,
+            .body = std.ArrayListAligned(std.ArrayList([]const u8), null).init(allocator),
+            .headers = std.StringHashMap(usize).init(allocator),
+        };
+        return DataFrame{
+            .table = table,
+        };
+    }
+
+    pub fn deinit(self: *DataFrame) void {
+        self.table.deinitTable();
+    }
+
+    pub fn readCsv(allocator: std.mem.Allocator, file_name: []const u8) !DataFrame {
+        var df = try DataFrame.init(allocator);
+        try df.table.readCsvTable(file_name);
+        return df;
+    }
+
+    pub fn head(self: *DataFrame) !void {
+        try self.table.headTable();
+    }
+
+    pub fn columns(self: *DataFrame) !void {
+        try self.table.columns();
+    }
+
+    pub fn shape(self: *DataFrame) !void {
+        self.table.shapeTable();
+    }
+
+    pub fn filter(self: *DataFrame, allocator: std.mem.Allocator, cols: []const []const u8) !DataFrame {
+        const filtered_table = try self.table.filterTable(allocator, cols);
+        return DataFrame{ .table = filtered_table };
+    }
+
+    pub fn drop(self: *DataFrame, allocator: std.mem.Allocator, cols: []const []const u8) !DataFrame {
+        const dropped_table = try self.table.dropColumnTable(allocator, cols);
+        return DataFrame{ .table = dropped_table };
+    }
+
+    pub fn toTensor(self: *DataFrame, allocator: std.mem.Allocator) !Tensor {
+        var tensorObject: TensorObject = try self.table.tableToTensor(allocator);
+        defer tensorObject.deinitTensor();
+        return Tensor.init(allocator, tensorObject.shape[0], tensorObject.shape[1], tensorObject.data);
+    }
+};
+
+pub const Tensor = struct {
+    allocator: std.mem.Allocator,
+    tensor: TensorObject,
+
+    pub fn init(allocator: std.mem.Allocator, rows: usize, cols: usize, data: []const f32) !Tensor {
+        const tensorObject: TensorObject = try TensorObject.initTensor(allocator, rows, cols, data);
+
+        return Tensor{
+            .allocator = allocator,
+            .tensor = tensorObject,
+        };
+    }
+
+    pub fn deinit(self: *Tensor) void {
+        self.tensor.deinitTensor();
+    }
+
+    pub fn head(self: *Tensor) void {
+        self.tensor.headTensor();
+    }
+
+    pub fn add(self: *Tensor, other: Tensor) !void {
+        self.tensor.add(other.tensor);
+    }
+
+    pub fn subtract(self: *Tensor, other: Tensor) !void {
+        self.tensor.subtract(other.tensor);
+    }
+
+    pub fn matmul(self: *Tensor, other: Tensor) !void {
+        self.tensor.matmul(other.tensor);
+    }
+
+    pub fn addBias(self: *Tensor, bias: Tensor) !void {
+        self.tensor.addBias(bias.tensor);
+    }
+
+    pub fn transpose(self: *Tensor) !Tensor {
+        const transposedData: TensorObject = self.tensor.transpose();
+
+        const tensorTransposed: Tensor = Tensor.init(self.allocator, transposedData.shape[0], transposedData.shape[1], transposedData.data);
+
+        return tensorTransposed;
+    }
+
+    pub fn inverse(self: *Tensor) !Tensor {
+        const inverseData: TensorObject = self.tensor.inverseVector();
+
+        const inverseTenosr: Tensor = Tensor.init(self.allocator, inverseData.shape[0], inverseData.shape[1], inverseData.data);
+
+        return inverseTenosr;
     }
 };

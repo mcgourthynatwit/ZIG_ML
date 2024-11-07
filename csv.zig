@@ -17,7 +17,7 @@ pub const Table = struct {
     headers: std.StringHashMap(usize),
 
     // Creates empty Table struct
-    pub fn init(allocator: std.mem.Allocator) Table {
+    pub fn initTable(allocator: std.mem.Allocator) Table {
         return Table{
             .source_data = null,
             .allocator = allocator,
@@ -26,7 +26,7 @@ pub const Table = struct {
         };
     }
 
-    pub fn deinit(self: *Table) void {
+    pub fn deinitTable(self: *Table) void {
         // For original that holds buffer in source_data
         if (self.source_data) |data| {
             self.allocator.free(data);
@@ -82,7 +82,7 @@ pub const Table = struct {
     // Opens file that is passed, gets the number of bytes in the file and creates char [] buffer that holds ENTIRE CSV
     // @TODO may need to optimize as reading the ENTIRE buffer and storing that in single array will be inefficient for very large files.
     // @TODO ensure that table is empty when reading
-    pub fn readCsv(self: *Table, file_name: []const u8) !void {
+    pub fn readCsvTable(self: *Table, file_name: []const u8) !void {
         const validFile: bool = verifyFileType(file_name);
 
         if (!validFile) {
@@ -199,7 +199,7 @@ pub const Table = struct {
     // Takes in table struct
     // Prints out the columns & the first 5 rows of the table
     // @TODO : Formatting this output for really long rows
-    pub fn head(self: *Table) !void {
+    pub fn headTable(self: *Table) !void {
         if (self.headers.count() == 0) {
             return TableError.MissingHeader;
         }
@@ -219,19 +219,28 @@ pub const Table = struct {
         std.debug.print("\n", .{});
 
         for (0..n) |i| {
-            std.debug.print("\n{s}", .{self.body.items[i].items});
+            std.debug.print("{s}\n", .{self.body.items[i].items});
         }
     }
 
     // Takes in table struct
     // Returns a 2d char array of the headers [header_idx][header_char_array]
-    pub fn columns(self: *Table) [][]const u8 {
-        return self.headers.count();
+    pub fn columns(self: *Table) !void {
+        // allocate array to sort
+        var headers = try self.allocator.alloc(HeaderEntry, self.headers.count());
+        defer self.allocator.free(headers);
+
+        // sort headers by index
+        try self.sortHeaders(&headers);
+
+        for (headers) |header| {
+            std.debug.print("{s} \n", .{header.header});
+        }
     }
 
     // Takes in table struct
     // Prints out the number of rows & number of columns.
-    pub fn shape(self: *Table) void {
+    pub fn shapeTable(self: *Table) void {
         std.debug.print("{d} rows\n", .{self.body.items.len});
         std.debug.print("{d} columns\n", .{self.headers.count()});
     }
@@ -277,7 +286,7 @@ pub const Table = struct {
 
     // @TODO There is certainly some way to optimize this, zig can utilize c++ API wonder if we can integrate CUDA
     // Returns a new Table that is subset of input table containing filtered rows
-    pub fn filter(self: *Table, allocator: std.mem.Allocator, cols: []const []const u8) !Table {
+    pub fn filterTable(self: *Table, allocator: std.mem.Allocator, cols: []const []const u8) !Table {
         if (cols.len == 0 or cols.len > self.headers.count()) {
             return TableError.InvalidColumn;
         }
@@ -346,7 +355,7 @@ pub const Table = struct {
     }
 
     // Drops specified cols of a table returning a new table
-    pub fn drop(self: *Table, allocator: std.mem.Allocator, cols: []const []const u8) !Table {
+    pub fn dropColumnTable(self: *Table, allocator: std.mem.Allocator, cols: []const []const u8) !Table {
         const dropped_num: usize = cols.len;
         if (dropped_num == 0 or dropped_num > self.headers.count()) {
             return TableError.InvalidColumn;
@@ -398,7 +407,7 @@ pub const Table = struct {
 
     // @TODO adjust for handling of strings
     // Converts a table struct to a tensor
-    pub fn toTensor(self: *Table, allocator: std.mem.Allocator) !Tensor {
+    pub fn tableToTensor(self: *Table, allocator: std.mem.Allocator) !Tensor {
         const table_rows = self.body.items.len;
         const table_cols = self.headers.count();
 

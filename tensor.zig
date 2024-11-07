@@ -23,7 +23,7 @@ pub const Tensor = struct {
     //pub fn toTable(self: *Tensor) !Table {}
 
     // outputs the first 5 rows of a tensor
-    pub fn head(self: Tensor) void {
+    pub fn headTensor(self: Tensor) void {
         // rows
         for (0..self.shape[0]) |i| {
             if (i == 5) {
@@ -39,7 +39,7 @@ pub const Tensor = struct {
     }
 
     // free's data, shape & strides of a tensor
-    pub fn deinit(self: *Tensor) void {
+    pub fn deinitTensor(self: *Tensor) void {
         self.allocator.free(self.data);
         self.allocator.free(self.shape);
         self.allocator.free(self.strides);
@@ -101,7 +101,7 @@ pub const Tensor = struct {
     }
 
     // gets the value at the row/col passed, helper function for Gauss Jordan
-    pub fn get(self: Tensor, row: usize, col: usize) !f32 {
+    fn get(self: Tensor, row: usize, col: usize) !f32 {
         if (row >= self.shape[0] or col >= self.shape[1]) {
             return TensorError.OutOfBounds;
         }
@@ -110,7 +110,7 @@ pub const Tensor = struct {
 
     // @TODO possibility to change this down the road to copied so function is not returning the slice and giving ownership
     // gets row specified, returns a slice allowing for manipulation.
-    pub fn getRow(self: Tensor, row: usize) ![]f32 {
+    fn getRow(self: Tensor, row: usize) ![]f32 {
         if (row >= self.shape[0]) {
             return TensorError.OutOfBounds;
         }
@@ -268,7 +268,7 @@ pub const Tensor = struct {
     }
 
     // Gaussian Jordan Elimination to inverse higher order matrices (3x3, 4,4 ... )s
-    pub fn gaussJordanElim(self: *Tensor) !Tensor {
+    fn gaussJordanElim(self: *Tensor) !Tensor {
         const n = self.shape[0];
         const round_error = 1e-3; // Add small round_error for floating point comparison
 
@@ -351,7 +351,7 @@ pub const Tensor = struct {
     //////////////////// Gauss Jordan Helpers /////////////////////
 
     // operation 1: Swap two rows
-    pub fn swapRows(self: *Tensor, row_1: usize, row_2: usize) !void {
+    fn swapRows(self: *Tensor, row_1: usize, row_2: usize) !void {
         // Get size of rows
         const row_size = self.shape[1];
 
@@ -373,7 +373,7 @@ pub const Tensor = struct {
     }
 
     // operation 2: scale a row by a non-zero val
-    pub fn scaleRow(self: *Tensor, row_num: usize, scalar: f32) !void {
+    fn scaleRow(self: *Tensor, row_num: usize, scalar: f32) !void {
         var row: []f32 = try self.getRow(row_num);
 
         for (0..self.shape[1]) |idx| {
@@ -382,7 +382,7 @@ pub const Tensor = struct {
     }
 
     // operation 3: add/subtract a non-zero scalar multiple of one row to another
-    pub fn addScaledRow(self: *Tensor, src_row: usize, dest_row: usize, scalar: f32) !void {
+    fn addScaledRow(self: *Tensor, src_row: usize, dest_row: usize, scalar: f32) !void {
         const row_size = self.shape[1];
 
         //create a tmp of the src_row to scale
