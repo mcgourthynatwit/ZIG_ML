@@ -73,6 +73,10 @@ pub const DataFrame = struct {
         defer tensorObject.deinitTensor();
         return Tensor.init(allocator, tensorObject.shape[0], tensorObject.shape[1], tensorObject.data);
     }
+
+    pub fn encode(self: *DataFrame, cols: []const []const u8) !void {
+        try self.table.encode(cols);
+    }
 };
 
 pub const Tensor = struct {

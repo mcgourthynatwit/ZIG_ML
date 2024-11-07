@@ -454,7 +454,44 @@ pub const Table = struct {
     }
 
     // Encodes a categorical column based on uniqueness 1-n (n is unique values in col)
-    //pub fn encode(self: *Table, cols: []const []const u8) !void {}
+    pub fn encode(self: *Table, cols: []const []const u8) !void {
+        for (cols) |col| {
+            // Check if column exists
+            const colIdx = try self.getHeaderIdx(col);
+
+            // Initialize hashmap for unique values
+            var unique_values = std.StringHashMap(usize).init(self.allocator);
+            defer unique_values.deinit();
+
+            // First pass: collect unique values and assign encodings
+            var next_encoding: usize = 0;
+
+            for (self.body.items) |row| {
+                const val = &row.items[colIdx];
+                // We can only encode string values
+                if (val.* != .String) continue;
+
+                const str_val = val.*.String;
+
+                if (!unique_values.contains(str_val)) {
+                    try unique_values.put(str_val, next_encoding);
+
+                    val.* = DataPoint{ .Int = @intCast(next_encoding) };
+                    next_encoding += 1;
+                } else {
+                    const encoding_opt = unique_values.get(str_val);
+                    self.allocator.free(str_val);
+
+                    val.* = DataPoint{ .Int = @intCast(encoding_opt.?) };
+                }
+            }
+
+            var it = unique_values.iterator();
+            while (it.next()) |entry| {
+                self.allocator.free(entry.key_ptr.*);
+            }
+        }
+    }
 
     // @TODO
     // Converts table to a matrix for matrix operations
