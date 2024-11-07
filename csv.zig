@@ -304,12 +304,15 @@ pub const Table = struct {
     }
 
     // Helper function for filter that parses a row of an original table and only appends the cells in specified cols
-    fn addFilteredRow(allocator: std.mem.Allocator, line: std.ArrayList([]const u8), cols: std.AutoHashMap(usize, void), row: *std.ArrayList([]const u8)) !void {
+    fn addFilteredRow(allocator: std.mem.Allocator, line: std.ArrayList(DataPoint), cols: std.AutoHashMap(usize, void), row: *std.ArrayList(DataPoint)) !void {
         for (0.., line.items) |idx, cell| {
             if (cols.contains(idx)) {
-                const owned_cell = try allocator.dupe(u8, cell);
-
-                try row.append(owned_cell);
+                const new_cell = switch (cell) {
+                    .String => |str| DataPoint{ .String = try allocator.dupe(u8, str) },
+                    .Float => |f| DataPoint{ .Float = f },
+                    .Int => |i| DataPoint{ .Int = i },
+                };
+                try row.append(new_cell);
             }
         }
     }
@@ -322,7 +325,7 @@ pub const Table = struct {
         }
 
         // Hashmap to store col index for quick lookup
-        var filter_map = std.AutoHashMap(usize, void).init(self.allocator);
+        var filter_map = std.AutoHashMap(usize, void).init(allocator);
         defer filter_map.deinit();
 
         // Iterate through passed array and fill in hashmap
@@ -335,7 +338,7 @@ pub const Table = struct {
         }
 
         // Init filtered table struct
-        var filtered_table = Table.init(allocator);
+        var filtered_table = Table.initTable(allocator);
 
         var headers = try self.allocator.alloc(HeaderEntry, self.headers.count());
         defer self.allocator.free(headers);
@@ -346,7 +349,7 @@ pub const Table = struct {
         // Put filtered headers into filter Table
         for (headers) |header| {
             if (filter_map.contains(header.index)) {
-                const owned_header = try self.allocator.dupe(u8, header.header);
+                const owned_header = try allocator.dupe(u8, header.header);
 
                 try filtered_table.addHeader(owned_header);
             }
@@ -361,12 +364,12 @@ pub const Table = struct {
         try filtered_table.body.ensureTotalCapacity(estimated_rows);
 
         // Store row data that will be appened onto self.body
-        var row = try std.ArrayList([]const u8).initCapacity(self.allocator, num_cols);
+        var row = try std.ArrayList(DataPoint).initCapacity(allocator, num_cols);
         defer row.deinit();
 
         // Iterate through rows of original table and use helper func to process & append
         for (self.body.items) |unfiltered_row| {
-            try addFilteredRow(self.allocator, unfiltered_row, filter_map, &row);
+            try addFilteredRow(allocator, unfiltered_row, filter_map, &row);
 
             try filtered_table.body.append(try row.clone());
             row.clearRetainingCapacity();
@@ -429,11 +432,14 @@ pub const Table = struct {
         }
 
         // call filter with remaining columns
-        const new_table: Table = try self.filter(allocator, remaining_cols.items);
-        errdefer new_table.deinit();
+        const new_table: Table = try self.filterTable(allocator, remaining_cols.items);
+        errdefer new_table.deinitTable();
 
         return new_table;
     }
+
+    // Encodes a categorical column based on uniqueness 1-n (n is unique values in col)
+    //pub fn encode(self: *Table, cols: []const []const u8) !void {}
 
     // @TODO
     // Converts table to a matrix for matrix operations

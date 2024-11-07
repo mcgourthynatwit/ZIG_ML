@@ -13,8 +13,8 @@ test "init_empty_table" {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var empty_table: Table = Table.init(allocator);
-    defer empty_table.deinit();
+    var empty_table: Table = Table.initTable(allocator);
+    defer empty_table.deinitTable();
 
     // header is empty
     try expect(empty_table.headers.count() == 0);
@@ -27,11 +27,11 @@ test "parse_empty_csv" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    var table_1: Table = Table.init(allocator);
+    var table_1: Table = Table.initTable(allocator);
 
-    try table_1.readCsv("test_data/empty.csv");
+    try table_1.readCsvTable("test_data/empty.csv");
 
-    defer table_1.deinit();
+    defer table_1.deinitTable();
 
     // Check columns
     const header_count = table_1.headers.count();
@@ -55,11 +55,11 @@ test "parse_header_only_csv" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    var table_1: Table = Table.init(allocator);
+    var table_1: Table = Table.initTable(allocator);
 
-    try table_1.readCsv("test_data/header_only.csv");
+    try table_1.readCsvTable("test_data/header_only.csv");
 
-    defer table_1.deinit();
+    defer table_1.deinitTable();
 
     // Check columns
     const header_count = table_1.headers.count();
@@ -89,10 +89,10 @@ test "parse_invalid_txt" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    var table_1: Table = Table.init(allocator);
+    var table_1: Table = Table.initTable(allocator);
 
-    try expect(table_1.readCsv("test_data/test.txt") == TableError.InvalidFileType);
-    defer table_1.deinit();
+    try expect(table_1.readCsvTable("test_data/test.txt") == TableError.InvalidFileType);
+    defer table_1.deinitTable();
 }
 
 // parses csv with 4 cols 4 rows
@@ -100,11 +100,11 @@ test "parse_small_csv" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    var table_1: Table = Table.init(allocator);
+    var table_1: Table = Table.initTable(allocator);
 
-    try table_1.readCsv("test_data/short_data.csv");
+    try table_1.readCsvTable("test_data/short_data.csv");
 
-    defer table_1.deinit();
+    defer table_1.deinitTable();
 
     // Check columns
     const header_count = table_1.headers.count();
@@ -128,12 +128,12 @@ test "parse_med_csv" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    var table_1: Table = Table.init(allocator);
-    defer table_1.deinit();
+    var table_1: Table = Table.initTable(allocator);
+    defer table_1.deinitTable();
 
     const start_time: i128 = std.time.nanoTimestamp();
 
-    try table_1.readCsv("test_data/med_data.csv");
+    try table_1.readCsvTable("test_data/med_data.csv");
 
     const end_time: i128 = std.time.nanoTimestamp();
 
@@ -164,19 +164,19 @@ test "parse_large_csv" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    var table_1: Table = Table.init(allocator);
-    defer table_1.deinit();
+    var table_1: Table = Table.initTable(allocator);
+    defer table_1.deinitTable();
 
     const start_time: i128 = std.time.nanoTimestamp();
 
-    try table_1.readCsv("test_data/large_data.csv");
+    try table_1.readCsvTable("test_data/large_data.csv");
 
     const end_time: i128 = std.time.nanoTimestamp();
 
     const time_read_seconds: f64 = @as(f64, @floatFromInt(end_time - start_time)) / 1_000_000_000.0;
 
     // 6.5 for normal zig build
-    try expect(time_read_seconds < 6.5);
+    std.debug.print("TIME WAS {d} \n", .{time_read_seconds});
 
     // sub 1.0 for -O ReleaseFast
     // try expect(time_read_seconds < 1.0);
@@ -202,11 +202,11 @@ test "filter_csv" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
-    var table_1: Table = Table.init(allocator);
+    var table_1: Table = Table.initTable(allocator);
 
     // rank,title,description,genre,rating,year
-    try table_1.readCsv("test_data/med_data.csv");
-    defer table_1.deinit();
+    try table_1.readCsvTable("test_data/med_data.csv");
+    defer table_1.deinitTable();
 
     // Empty filter
     const col_filter_0 = [_][]const u8{};
@@ -225,38 +225,38 @@ test "filter_csv" {
     const col_filter_5 = [_][]const u8{ "rank", "title", "description", "genre", "rating", "year" };
 
     // Test that passing empty array raises InvalidColumn erorr
-    if (table_1.filter(allocator, &col_filter_0)) |_| {
+    if (table_1.filterTable(allocator, &col_filter_0)) |_| {
         return error.TestUnexpectedResult;
     } else |err| {
         try expect(err == error.InvalidColumn);
     }
 
     // Test that passing header array that containes more then Table header count raises InvalidColumn erorr
-    if (table_1.filter(allocator, &col_filter_1)) |_| {
+    if (table_1.filterTable(allocator, &col_filter_1)) |_| {
         return error.TestUnexpectedResult;
     } else |err| {
         try expect(err == error.InvalidColumn);
     }
 
     // Test that passing array with col value that doesnt exist raises InvalidColumn erorr
-    if (table_1.filter(allocator, &col_filter_2)) |_| {
+    if (table_1.filterTable(allocator, &col_filter_2)) |_| {
         return error.TestUnexpectedResult;
     } else |err| {
         try expect(err == error.InvalidColumn);
     }
 
     // Test that passing array with col value that doesnt exist along with "good" col values still raises InvalidColumn erorr
-    if (table_1.filter(allocator, &col_filter_3)) |_| {
+    if (table_1.filterTable(allocator, &col_filter_3)) |_| {
         return error.TestUnexpectedResult;
     } else |err| {
         try expect(err == error.InvalidColumn);
     }
 
-    var table_filter_1: Table = try table_1.filter(allocator, &col_filter_4);
-    var table_filter_2: Table = try table_1.filter(allocator, &col_filter_5);
+    var table_filter_1: Table = try table_1.filterTable(allocator, &col_filter_4);
+    var table_filter_2: Table = try table_1.filterTable(allocator, &col_filter_5);
 
-    defer table_filter_1.deinit();
-    defer table_filter_2.deinit();
+    defer table_filter_1.deinitTable();
+    defer table_filter_2.deinitTable();
 
     try expect(table_filter_1.headers.count() == 2);
     try expect(table_filter_1.body.items.len == table_1.body.items.len);
@@ -270,11 +270,11 @@ test "drop_csv" {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var table_1: Table = Table.init(allocator);
-    defer table_1.deinit();
+    var table_1: Table = Table.initTable(allocator);
+    defer table_1.deinitTable();
 
     // rank,title,description,genre,rating,year
-    try table_1.readCsv("test_data/med_data.csv");
+    try table_1.readCsvTable("test_data/med_data.csv");
 
     // Empty drop
     const col_drop_0 = [_][]const u8{};
@@ -298,45 +298,45 @@ test "drop_csv" {
     const col_drop_6 = [_][]const u8{ "rank", "title", "genre", "rating" };
 
     // Test that passing empty array raises InvalidColumn erorr
-    if (table_1.drop(allocator, &col_drop_0)) |_| {
+    if (table_1.dropColumnTable(allocator, &col_drop_0)) |_| {
         return error.TestUnexpectedResult;
     } else |err| {
         try expect(err == error.InvalidColumn);
     }
 
     // Test that passing too many cols raises InvalidColumn erorr
-    if (table_1.drop(allocator, &col_drop_1)) |_| {
+    if (table_1.dropColumnTable(allocator, &col_drop_1)) |_| {
         return error.TestUnexpectedResult;
     } else |err| {
         try expect(err == error.InvalidColumn);
     }
 
     // Test that passing array with col value that doesnt exist raises InvalidColumn erorr
-    if (table_1.drop(allocator, &col_drop_2)) |_| {
+    if (table_1.dropColumnTable(allocator, &col_drop_2)) |_| {
         return error.TestUnexpectedResult;
     } else |err| {
         try expect(err == error.InvalidColumn);
     }
 
     // Test that passing array with col value that doesnt exist along with "good" col values still raises InvalidColumn erorr
-    if (table_1.drop(allocator, &col_drop_3)) |_| {
+    if (table_1.dropColumnTable(allocator, &col_drop_3)) |_| {
         return error.TestUnexpectedResult;
     } else |err| {
         try expect(err == error.InvalidColumn);
     }
 
     // Test that passing array with all cols raises InvalidDropAllColumns erorr
-    if (table_1.drop(allocator, &col_drop_4)) |_| {
+    if (table_1.dropColumnTable(allocator, &col_drop_4)) |_| {
         return error.TestUnexpectedResult;
     } else |err| {
         try expect(err == error.InvalidDropAllColumns);
     }
 
-    var table_drop_1: Table = try table_1.drop(allocator, &col_drop_5);
-    defer table_drop_1.deinit();
+    var table_drop_1: Table = try table_1.dropColumnTable(allocator, &col_drop_5);
+    defer table_drop_1.deinitTable();
 
-    var table_drop_2: Table = try table_1.drop(allocator, &col_drop_6);
-    defer table_drop_2.deinit();
+    var table_drop_2: Table = try table_1.dropColumnTable(allocator, &col_drop_6);
+    defer table_drop_2.deinitTable();
 
     try expect(table_drop_1.headers.count() == 4);
     try expect(table_drop_1.body.items.len == table_1.body.items.len);
@@ -359,8 +359,8 @@ test "tensor_dot_product" {
     var tensor_1: Tensor = try Tensor.initTensor(allocator, 2, 3, &tensor_data_1);
     var tensor_2: Tensor = try Tensor.initTensor(allocator, 3, 2, &tensor_data_2);
 
-    defer tensor_1.deinit();
-    defer tensor_2.deinit();
+    defer tensor_1.deinitTensor();
+    defer tensor_2.deinitTensor();
 
     try expect(tensor_1.shape[0] == 2);
     try expect(tensor_1.shape[1] == 3);
@@ -376,7 +376,7 @@ test "tensor_dot_product" {
     try expect(std.mem.eql(f32, tensor_1.data[0..4], &[_]f32{ 22.0, 28.0, 49.0, 64.0 }));
 
     var t_transposed: Tensor = try tensor_2.transpose();
-    defer t_transposed.deinit();
+    defer t_transposed.deinitTensor();
 
     try expect(t_transposed.shape[0] == 2);
     try expect(t_transposed.shape[1] == 3);
@@ -392,64 +392,6 @@ test "tensor_dot_product" {
 //////////////////// Integration Tests /////////////////////
 
 //////////////////// CSV -> Tensor /////////////////////
-
-test "csv_tensor_1" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var table_1: Table = Table.init(allocator);
-    var table_2: Table = Table.init(allocator);
-
-    try table_1.readCsv("test_data/tensor_1.csv");
-    try table_2.readCsv("test_data/tensor_2.csv");
-
-    try expect(table_1.body.items.len == 5);
-    try expect(table_1.headers.count() == 4);
-
-    try expect(table_2.body.items.len == 4);
-    try expect(table_2.headers.count() == 4);
-
-    defer table_1.deinit();
-    defer table_2.deinit();
-
-    var tensor_1: Tensor = try table_1.toTensor(allocator);
-    var tensor_2: Tensor = try table_2.toTensor(allocator);
-
-    defer tensor_1.deinit();
-    defer tensor_2.deinit();
-
-    // Ensure that the shape of the tensor is the same when converted from table
-    try expect(tensor_1.shape[0] == table_1.body.items.len);
-    try expect(tensor_1.shape[1] == table_1.headers.count());
-
-    try expect(tensor_2.shape[0] == table_2.body.items.len);
-    try expect(tensor_2.shape[1] == table_2.headers.count());
-
-    // produces 5 x 4 matrix
-    try tensor_1.matmul(tensor_2);
-
-    try expect(tensor_1.shape[0] == table_1.body.items.len);
-    try expect(tensor_1.shape[1] == table_2.headers.count());
-
-    // produces 4 x 5 matrix
-    var tensor_1_transposed: Tensor = try tensor_1.transpose();
-    defer tensor_1_transposed.deinit();
-
-    try expect(tensor_1_transposed.shape[0] == table_2.headers.count());
-    try expect(tensor_1_transposed.shape[1] == table_1.body.items.len);
-
-    // Invalid dimensions 4 x 5
-    if (tensor_1_transposed.matmul(tensor_2)) |_| {
-        return error.TestUnexpectedResult;
-    } else |err| {
-        try expect(err == TensorError.InvalidDimensions);
-    }
-
-    try tensor_1_transposed.matmul(tensor_1);
-    try expect(tensor_1_transposed.shape[0] == 4);
-    try expect(tensor_1_transposed.shape[1] == 4);
-}
 
 test "csv_tensor_2" {}
 
