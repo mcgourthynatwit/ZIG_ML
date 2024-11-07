@@ -1,7 +1,6 @@
 const std = @import("std");
 const csv = @import("csv.zig");
 const Table = csv.Table;
-
 pub const TensorError = error{ InvalidDimensions, OutOfBounds, NonInvertibleMatrix };
 
 pub const RegressionResult = struct {

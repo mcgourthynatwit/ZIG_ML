@@ -2,7 +2,7 @@ const std = @import("std");
 
 const Table = @import("csv.zig").Table;
 const TensorObject = @import("tensor.zig").Tensor;
-
+const DataPoint = @import("csv.zig").DataPoint;
 pub const Zoom = struct {
     allocator: std.mem.Allocator,
 
@@ -20,7 +20,7 @@ pub const DataFrame = struct {
         const table = Table{
             .source_data = null,
             .allocator = allocator,
-            .body = std.ArrayListAligned(std.ArrayList([]const u8), null).init(allocator),
+            .body = std.ArrayListAligned(std.ArrayList(DataPoint), null).init(allocator),
             .headers = std.StringHashMap(usize).init(allocator),
         };
         return DataFrame{

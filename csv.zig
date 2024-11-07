@@ -9,11 +9,17 @@ const HeaderEntry = struct {
     index: usize,
 };
 
+pub const DataPoint = union(enum) {
+    Float: f32,
+    Int: i32,
+    String: []const u8,
+};
+
 // @TODO adjust Table & add enum to handle floats
 pub const Table = struct {
     source_data: ?[]const u8,
     allocator: std.mem.Allocator,
-    body: std.ArrayListAligned(std.ArrayList([]const u8), null),
+    body: std.ArrayList(std.ArrayList(DataPoint)),
     headers: std.StringHashMap(usize),
 
     // Creates empty Table struct
@@ -21,7 +27,7 @@ pub const Table = struct {
         return Table{
             .source_data = null,
             .allocator = allocator,
-            .body = std.ArrayList(std.ArrayList([]const u8)).init(allocator),
+            .body = std.ArrayList(std.ArrayList(DataPoint)).init(allocator),
             .headers = std.StringHashMap(usize).init(allocator),
         };
     }
@@ -53,9 +59,13 @@ pub const Table = struct {
             self.headers.deinit();
 
             for (self.body.items) |*row| {
-                // Free each string in the row
-                for (row.items) |str| {
-                    self.allocator.free(str);
+                for (row.items) |data_point| {
+                    switch (data_point) {
+                        // For String variants, we need to free the string
+                        .String => |str| self.allocator.free(str),
+                        // Other variants don't need explicit deallocation
+                        .Float, .Int => {},
+                    }
                 }
                 row.deinit();
             }
@@ -139,20 +149,29 @@ pub const Table = struct {
         }
     }
 
+    fn parseDatapoint(str: []const u8) !DataPoint {
+        if (std.fmt.parseFloat(f32, str)) |float_val| {
+            return DataPoint{ .Float = float_val };
+        } else |_| {
+            // Try parsing as integer
+            if (std.fmt.parseInt(i32, str, 10)) |int_val| {
+                return DataPoint{ .Int = int_val };
+            } else |_| {
+                // If both fail, return as string
+                return DataPoint{ .String = str };
+            }
+        }
+    }
+
     // Helper for parse()
     // Splits the line passed by "," & iterates through this split char array trimming any unecessary text ("\t\r\n") & appends to row.
-    fn parseLine(self: *Table, line: []const u8, num_cols: usize, row: *std.ArrayList([]const u8)) !void {
+    fn parseLine(line: []const u8, row: *std.ArrayList(DataPoint)) !void {
         var it = std.mem.split(u8, line, ",");
         while (it.next()) |field| {
             // Trim any unecessary text
-            const trimmed = std.mem.trim(u8, field, " \t\r\n");
-
-            try row.append(trimmed);
-        }
-
-        // Pad with empty strings if necessary
-        while (row.items.len < num_cols) {
-            try row.append(try self.allocator.dupe(u8, ""));
+            const trimmed: []const u8 = std.mem.trim(u8, field, " \t\r\n");
+            const trimmedDataPoint: DataPoint = try parseDatapoint(trimmed);
+            try row.append(trimmedDataPoint);
         }
     }
 
@@ -183,17 +202,28 @@ pub const Table = struct {
         try self.body.ensureTotalCapacity(estimated_rows);
 
         // Store row data that will be appened onto self.body
-        var row = try std.ArrayList([]const u8).initCapacity(self.allocator, num_cols);
+        var row = try std.ArrayList(DataPoint).initCapacity(self.allocator, num_cols);
         defer row.deinit();
 
         while (rows.next()) |line| {
             if (std.mem.trim(u8, line, " \r\n").len == 0) continue;
-            try self.parseLine(line, num_cols, &row);
+            try parseLine(line, &row);
 
             // Append clone of row & clear row for next iteration
             try self.body.append(try row.clone());
             row.clearRetainingCapacity();
         }
+    }
+
+    fn printDataPoint(dp: []DataPoint) void {
+        for (dp) |data| {
+            switch (data) {
+                .Float => |f| std.debug.print("{d} ", .{f}),
+                .Int => |i| std.debug.print("{d} ", .{i}),
+                .String => |s| std.debug.print("{s} ", .{s}),
+            }
+        }
+        std.debug.print("\n", .{});
     }
 
     // Takes in table struct
@@ -219,7 +249,7 @@ pub const Table = struct {
         std.debug.print("\n", .{});
 
         for (0..n) |i| {
-            std.debug.print("{s}\n", .{self.body.items[i].items});
+            printDataPoint(self.body.items[i].items);
         }
     }
 
@@ -403,47 +433,6 @@ pub const Table = struct {
         errdefer new_table.deinit();
 
         return new_table;
-    }
-
-    // @TODO adjust for handling of strings
-    // Converts a table struct to a tensor
-    pub fn tableToTensor(self: *Table, allocator: std.mem.Allocator) !Tensor {
-        const table_rows = self.body.items.len;
-        const table_cols = self.headers.count();
-
-        const tensor_size = table_rows * table_cols;
-
-        var data = try allocator.alloc(f32, tensor_size);
-        errdefer allocator.free(data);
-
-        var tensor_shape = try allocator.alloc(usize, 2);
-        errdefer allocator.free(tensor_shape);
-
-        tensor_shape[0] = table_rows;
-        tensor_shape[1] = table_cols;
-
-        var strides = try allocator.alloc(usize, 2);
-        errdefer allocator.free(strides);
-
-        strides[0] = table_cols;
-        strides[1] = 1;
-
-        // fill in tensor
-        var i: usize = 0;
-
-        for (self.body.items) |row| {
-            for (row.items) |cell| {
-                data[i] = try std.fmt.parseFloat(f32, cell);
-                i += 1;
-            }
-        }
-
-        return Tensor{
-            .data = data,
-            .shape = tensor_shape,
-            .strides = strides,
-            .allocator = allocator,
-        };
     }
 
     // @TODO
