@@ -84,6 +84,87 @@ pub const Tensor = struct {
         };
     }
 
+    pub fn fullTensor(allocator: std.mem.Allocator, rows: usize, cols: usize, fill_value: f32) !Tensor {
+        const tensor_size = rows * cols;
+
+        const tensor_data: []f32 = try allocator.alloc(f32, tensor_size);
+        errdefer allocator.free(tensor_data);
+
+        @memset(tensor_data, fill_value);
+
+        // Create tensor struct directly
+        var tensor_shape = try allocator.alloc(usize, 2);
+        errdefer allocator.free(tensor_shape);
+        tensor_shape[0] = rows;
+        tensor_shape[1] = cols;
+
+        var strides = try allocator.alloc(usize, 2);
+        errdefer allocator.free(strides);
+        strides[0] = cols;
+        strides[1] = 1;
+
+        return Tensor{
+            .data = tensor_data,
+            .shape = tensor_shape,
+            .strides = strides,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn zeroTensor(allocator: std.mem.Allocator, rows: usize, cols: usize) !Tensor {
+        const tensor_size = rows * cols;
+
+        const tensor_data: []f32 = try allocator.alloc(f32, tensor_size);
+        errdefer allocator.free(tensor_data);
+
+        @memset(tensor_data, 0.0);
+
+        // Create tensor struct directly
+        var tensor_shape = try allocator.alloc(usize, 2);
+        errdefer allocator.free(tensor_shape);
+        tensor_shape[0] = rows;
+        tensor_shape[1] = cols;
+
+        var strides = try allocator.alloc(usize, 2);
+        errdefer allocator.free(strides);
+        strides[0] = cols;
+        strides[1] = 1;
+
+        return Tensor{
+            .data = tensor_data,
+            .shape = tensor_shape,
+            .strides = strides,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn onesTensor(allocator: std.mem.Allocator, rows: usize, cols: usize) !Tensor {
+        const tensor_size = rows * cols;
+
+        const tensor_data: []f32 = try allocator.alloc(f32, tensor_size);
+        errdefer allocator.free(tensor_data);
+
+        @memset(tensor_data, 1.0);
+
+        // Create tensor struct directly
+        var tensor_shape = try allocator.alloc(usize, 2);
+        errdefer allocator.free(tensor_shape);
+        tensor_shape[0] = rows;
+        tensor_shape[1] = cols;
+
+        var strides = try allocator.alloc(usize, 2);
+        errdefer allocator.free(strides);
+        strides[0] = cols;
+        strides[1] = 1;
+
+        return Tensor{
+            .data = tensor_data,
+            .shape = tensor_shape,
+            .strides = strides,
+            .allocator = allocator,
+        };
+    }
+
     pub fn clone(self: *const Tensor) !Tensor {
         // Create new data array
         const tensor_size = self.shape[0] * self.shape[1];

@@ -96,6 +96,33 @@ pub const Tensor = struct {
         self.tensor.deinitTensor();
     }
 
+    pub fn full(allocator: std.mem.Allocator, rows: usize, cols: usize, fill_value: f32) !Tensor {
+        const tensorObject: TensorObject = try TensorObject.fullTensor(allocator, rows, cols, fill_value);
+
+        return Tensor{
+            .allocator = allocator,
+            .tensor = tensorObject,
+        };
+    }
+
+    pub fn zeros(allocator: std.mem.Allocator, rows: usize, cols: usize) !Tensor {
+        const tensorObject: TensorObject = try TensorObject.zeroTensor(allocator, rows, cols);
+
+        return Tensor{
+            .allocator = allocator,
+            .tensor = tensorObject,
+        };
+    }
+
+    pub fn ones(allocator: std.mem.Allocator, rows: usize, cols: usize) !Tensor {
+        const tensorObject: TensorObject = try TensorObject.onesTensor(allocator, rows, cols);
+
+        return Tensor{
+            .allocator = allocator,
+            .tensor = tensorObject,
+        };
+    }
+
     pub fn head(self: *Tensor) void {
         self.tensor.headTensor();
     }

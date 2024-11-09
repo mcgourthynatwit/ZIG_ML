@@ -336,6 +336,9 @@ pub const Table = struct {
     // Returns a new Table that is subset of input table containing filtered rows
     pub fn filterTable(self: *Table, allocator: std.mem.Allocator, cols: []const []const u8) !Table {
         if (cols.len == 0 or cols.len > self.headers.count()) {
+            const err = error.InvalidColumn;
+
+            std.debug.print("Error occured: {!} of table with shape {d}{d}\n", .{ err, self.headers.count(), self.body.items.len });
             return TableError.InvalidColumn;
         }
 
@@ -346,6 +349,9 @@ pub const Table = struct {
         // Iterate through passed array and fill in hashmap
         for (cols) |col| {
             if (!self.headerExists(col)) {
+                const err = error.InvalidColumn;
+
+                std.debug.print("Error occured: {!} of table with shape {d} X {d}, column: {s} DNE\n", .{ err, self.headers.count(), self.body.items.len, col });
                 return TableError.InvalidColumn;
             }
             const colIdx = try self.getHeaderIdx(col);
