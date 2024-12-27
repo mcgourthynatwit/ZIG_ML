@@ -170,9 +170,8 @@ pub const Tensor = struct {
 };
 
 pub const ML = struct {
-    pub fn linear(X: TensorObject, Y: TensorObject) !RegressionResult {
-        const result: RegressionResult = try Ml.linearRegression(X, Y);
-
+    pub fn linear(X: Tensor, Y: Tensor) !RegressionResult {
+        const result: RegressionResult = try Ml.linearRegression(X.tensor, Y.tensor);
         return result;
     }
 };

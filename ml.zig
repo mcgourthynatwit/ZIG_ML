@@ -9,6 +9,14 @@ pub const RegressionResult = struct {
     mae: f32,
     rmse: f32,
     predictions: []f32,
+    coefficients: []f32,
+    intercept: f32,
+    allocator: std.mem.Allocator, // Add this
+
+    pub fn deinit(self: *RegressionResult) void {
+        self.allocator.free(self.predictions);
+        self.allocator.free(self.coefficients);
+    }
 };
 
 pub const ML = struct {
@@ -77,37 +85,47 @@ pub const ML = struct {
 
     // OLS
     pub fn linearRegression(X: Tensor, Y: Tensor) !RegressionResult {
-        // Calculate beta = (X^T X)^-1 X^T Y
-        var X_C: Tensor = try Tensor.initTensor(X.allocator, X.shape[0], X.shape[1], X.data);
+        var X_augmented = try X.clone();
+        try X_augmented.addOnesColumn();
+        defer X_augmented.deinitTensor();
 
-        // First transpose
+        var X_C: Tensor = try Tensor.initTensor(X_augmented.allocator, X_augmented.shape[0], X_augmented.shape[1], X_augmented.data);
         var X_T: Tensor = try X_C.transpose();
-
-        // .matmul updates X_T in place
         try X_T.matmul(X_C);
         var beta: Tensor = try X_T.inverseVector();
 
-        // Clear X_T and set it to transposed again since it was modified above
-        X_T.deinit();
-
+        X_T.deinitTensor();
         X_T = try X_C.transpose();
-
         try beta.matmul(X_T);
         try beta.matmul(Y);
 
+        // Create our result values before any cleanup
+        const coeffs = try X_augmented.allocator.alloc(f32, beta.data.len - 1);
+        @memcpy(coeffs, beta.data[1..]);
+        const intercept = beta.data[0];
         try X_C.matmul(beta);
 
-        // Clean up
-        beta.deinit();
-        X_T.deinit();
-        defer X_C.deinit();
+        // Store metrics before cleanup
+        const r2 = rSquared(Y, X_C);
+        const mean_se = mse(Y, X_C);
+        const mean_ae = mae(Y, X_C);
+        const root_mse = rmse(Y, X_C);
+        const preds = try X_augmented.allocator.dupe(f32, X_C.data);
+
+        // Now do cleanup
+        beta.deinitTensor();
+        X_T.deinitTensor();
+        X_C.deinitTensor();
 
         return RegressionResult{
-            .r_squared = rSquared(Y, X_C),
-            .mse = mse(Y, X_C),
-            .mae = mae(Y, X_C),
-            .rmse = rmse(Y, X_C),
-            .predictions = X_C.data,
+            .r_squared = r2,
+            .mse = mean_se,
+            .mae = mean_ae,
+            .rmse = root_mse,
+            .predictions = preds,
+            .coefficients = coeffs,
+            .intercept = intercept,
+            .allocator = X_augmented.allocator,
         };
     }
 };

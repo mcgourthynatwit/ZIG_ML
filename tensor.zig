@@ -364,10 +364,10 @@ pub const Tensor = struct {
         const round_error = 1e-3; // Add small round_error for floating point comparison
 
         var cloned_tensor: Tensor = try initTensor(self.allocator, n, n, self.data);
-        errdefer cloned_tensor.deinit();
+        errdefer cloned_tensor.deinitTensor();
 
         var identity_matrix: Tensor = try self.initIdentityMatrix();
-        errdefer identity_matrix.deinit();
+        errdefer identity_matrix.deinitTensor();
 
         // Forward elimination
         for (0..n) |i| {
@@ -435,7 +435,7 @@ pub const Tensor = struct {
             }
         }
 
-        cloned_tensor.deinit();
+        cloned_tensor.deinitTensor();
         return identity_matrix;
     }
 
