@@ -3,6 +3,9 @@ const std = @import("std");
 const Table = @import("csv.zig").Table;
 const TensorObject = @import("tensor.zig").Tensor;
 const DataPoint = @import("csv.zig").DataPoint;
+const Ml = @import("ml.zig").ML;
+const RegressionResult = @import("ml.zig").RegressionResult;
+
 pub const Zoom = struct {
     allocator: std.mem.Allocator,
 
@@ -68,10 +71,12 @@ pub const DataFrame = struct {
         return DataFrame{ .table = dropped_table };
     }
 
-    pub fn toTensor(self: *DataFrame, allocator: std.mem.Allocator) !Tensor {
-        var tensorObject: TensorObject = try self.table.tableToTensor(allocator);
-        defer tensorObject.deinitTensor();
-        return Tensor.init(allocator, tensorObject.shape[0], tensorObject.shape[1], tensorObject.data);
+    pub fn toTensor(self: *DataFrame) !Tensor {
+        const tensorObject: TensorObject = try self.table.tableToTensor();
+        return Tensor{
+            .allocator = self.table.allocator,
+            .tensor = tensorObject,
+        };
     }
 
     pub fn encode(self: *DataFrame, cols: []const []const u8) !void {
@@ -123,6 +128,10 @@ pub const Tensor = struct {
         };
     }
 
+    pub fn addOnesCol(self: *Tensor) !void {
+        try self.tensor.addOnesColumn();
+    }
+
     pub fn head(self: *Tensor) void {
         self.tensor.headTensor();
     }
@@ -154,8 +163,16 @@ pub const Tensor = struct {
     pub fn inverse(self: *Tensor) !Tensor {
         const inverseData: TensorObject = self.tensor.inverseVector();
 
-        const inverseTenosr: Tensor = Tensor.init(self.allocator, inverseData.shape[0], inverseData.shape[1], inverseData.data);
+        const inverseTensor: Tensor = Tensor.init(self.allocator, inverseData.shape[0], inverseData.shape[1], inverseData.data);
 
-        return inverseTenosr;
+        return inverseTensor;
+    }
+};
+
+pub const ML = struct {
+    pub fn linear(X: TensorObject, Y: TensorObject) !RegressionResult {
+        const result: RegressionResult = try Ml.linearRegression(X, Y);
+
+        return result;
     }
 };
