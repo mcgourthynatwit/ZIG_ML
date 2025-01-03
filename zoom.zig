@@ -3,6 +3,9 @@ const std = @import("std");
 const Table = @import("csv.zig").Table;
 const TensorObject = @import("tensor.zig").Tensor;
 const DataPoint = @import("csv.zig").DataPoint;
+const Ml = @import("ml.zig").ML;
+const RegressionResult = @import("ml.zig").RegressionResult;
+
 pub const Zoom = struct {
     allocator: std.mem.Allocator,
 
@@ -68,10 +71,12 @@ pub const DataFrame = struct {
         return DataFrame{ .table = dropped_table };
     }
 
-    pub fn toTensor(self: *DataFrame, allocator: std.mem.Allocator) !Tensor {
-        var tensorObject: TensorObject = try self.table.tableToTensor(allocator);
-        defer tensorObject.deinitTensor();
-        return Tensor.init(allocator, tensorObject.shape[0], tensorObject.shape[1], tensorObject.data);
+    pub fn toTensor(self: *DataFrame) !Tensor {
+        const tensorObject: TensorObject = try self.table.tableToTensor();
+        return Tensor{
+            .allocator = self.table.allocator,
+            .tensor = tensorObject,
+        };
     }
 
     pub fn encode(self: *DataFrame, cols: []const []const u8) !void {
@@ -94,6 +99,37 @@ pub const Tensor = struct {
 
     pub fn deinit(self: *Tensor) void {
         self.tensor.deinitTensor();
+    }
+
+    pub fn full(allocator: std.mem.Allocator, rows: usize, cols: usize, fill_value: f32) !Tensor {
+        const tensorObject: TensorObject = try TensorObject.fullTensor(allocator, rows, cols, fill_value);
+
+        return Tensor{
+            .allocator = allocator,
+            .tensor = tensorObject,
+        };
+    }
+
+    pub fn zeros(allocator: std.mem.Allocator, rows: usize, cols: usize) !Tensor {
+        const tensorObject: TensorObject = try TensorObject.zeroTensor(allocator, rows, cols);
+
+        return Tensor{
+            .allocator = allocator,
+            .tensor = tensorObject,
+        };
+    }
+
+    pub fn ones(allocator: std.mem.Allocator, rows: usize, cols: usize) !Tensor {
+        const tensorObject: TensorObject = try TensorObject.onesTensor(allocator, rows, cols);
+
+        return Tensor{
+            .allocator = allocator,
+            .tensor = tensorObject,
+        };
+    }
+
+    pub fn addOnesCol(self: *Tensor) !void {
+        try self.tensor.addOnesColumn();
     }
 
     pub fn head(self: *Tensor) void {
@@ -127,8 +163,15 @@ pub const Tensor = struct {
     pub fn inverse(self: *Tensor) !Tensor {
         const inverseData: TensorObject = self.tensor.inverseVector();
 
-        const inverseTenosr: Tensor = Tensor.init(self.allocator, inverseData.shape[0], inverseData.shape[1], inverseData.data);
+        const inverseTensor: Tensor = Tensor.init(self.allocator, inverseData.shape[0], inverseData.shape[1], inverseData.data);
 
-        return inverseTenosr;
+        return inverseTensor;
+    }
+};
+
+pub const ML = struct {
+    pub fn linear(X: Tensor, Y: Tensor) !RegressionResult {
+        const result: RegressionResult = try Ml.linearRegression(X.tensor, Y.tensor);
+        return result;
     }
 };

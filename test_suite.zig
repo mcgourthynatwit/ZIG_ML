@@ -175,8 +175,8 @@ test "parse_large_csv" {
 
     const time_read_seconds: f64 = @as(f64, @floatFromInt(end_time - start_time)) / 1_000_000_000.0;
 
-    // 6.5 for normal zig build
-    std.debug.print("TIME WAS {d} \n", .{time_read_seconds});
+    // 8.0 for normal zig build THIS IS A WORK IN PROGRESS OPTIMIZATION
+    try expect(time_read_seconds < 8.0);
 
     // sub 1.0 for -O ReleaseFast
     // try expect(time_read_seconds < 1.0);
@@ -387,6 +387,54 @@ test "tensor_dot_product" {
     try expect(std.mem.eql(f32, tensor_1.data[0..6], &[_]f32{ 78.0, 178.0, 278.0, 177.0, 403.0, 629.0 }));
     try expect(tensor_1.shape[0] == 2);
     try expect(tensor_1.shape[1] == 3);
+}
+
+test "tensor_full" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var tensor: Tensor = try Tensor.fullTensor(allocator, 2, 3, 4);
+    defer tensor.deinitTensor();
+
+    try expect(tensor.shape[0] == 2);
+    try expect(tensor.shape[1] == 3);
+
+    for (tensor.data) |val| {
+        try expect(val == 4.0);
+    }
+}
+
+test "tensor_one" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var tensor: Tensor = try Tensor.onesTensor(allocator, 2, 3);
+    defer tensor.deinitTensor();
+
+    try expect(tensor.shape[0] == 2);
+    try expect(tensor.shape[1] == 3);
+
+    for (tensor.data) |val| {
+        try expect(val == 1.0);
+    }
+}
+
+test "tensor_zero" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var tensor: Tensor = try Tensor.zeroTensor(allocator, 2, 3);
+    defer tensor.deinitTensor();
+
+    try expect(tensor.shape[0] == 2);
+    try expect(tensor.shape[1] == 3);
+
+    for (tensor.data) |val| {
+        try expect(val == 0.0);
+    }
 }
 
 //////////////////// Integration Tests /////////////////////

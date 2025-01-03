@@ -3,14 +3,6 @@ const csv = @import("csv.zig");
 const Table = csv.Table;
 pub const TensorError = error{ InvalidDimensions, OutOfBounds, NonInvertibleMatrix };
 
-pub const RegressionResult = struct {
-    r_squared: f32,
-    mse: f32,
-    mae: f32,
-    rmse: f32,
-    predictions: []f32,
-};
-
 pub const Tensor = struct {
     data: []f32, // 1d flattened array continous in memory
     shape: []usize, // Shape [row, col]
@@ -53,7 +45,7 @@ pub const Tensor = struct {
             return TensorError.InvalidDimensions;
         }
 
-        var tensor_data = try allocator.alloc(f32, tensor_size);
+        const tensor_data = try allocator.alloc(f32, tensor_size);
         errdefer allocator.free(tensor_data);
 
         var tensor_shape = try allocator.alloc(usize, 2);
@@ -68,13 +60,88 @@ pub const Tensor = struct {
         strides[0] = cols;
         strides[1] = 1;
 
-        // fill in tensor
-        var i: usize = 0;
+        @memcpy(tensor_data, data);
 
-        for (data) |item| {
-            tensor_data[i] = item;
-            i += 1;
-        }
+        return Tensor{
+            .data = tensor_data,
+            .shape = tensor_shape,
+            .strides = strides,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn fullTensor(allocator: std.mem.Allocator, rows: usize, cols: usize, fill_value: f32) !Tensor {
+        const tensor_size = rows * cols;
+
+        const tensor_data: []f32 = try allocator.alloc(f32, tensor_size);
+        errdefer allocator.free(tensor_data);
+
+        @memset(tensor_data, fill_value);
+
+        // Create tensor struct directly
+        var tensor_shape = try allocator.alloc(usize, 2);
+        errdefer allocator.free(tensor_shape);
+        tensor_shape[0] = rows;
+        tensor_shape[1] = cols;
+
+        var strides = try allocator.alloc(usize, 2);
+        errdefer allocator.free(strides);
+        strides[0] = cols;
+        strides[1] = 1;
+
+        return Tensor{
+            .data = tensor_data,
+            .shape = tensor_shape,
+            .strides = strides,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn zeroTensor(allocator: std.mem.Allocator, rows: usize, cols: usize) !Tensor {
+        const tensor_size = rows * cols;
+
+        const tensor_data: []f32 = try allocator.alloc(f32, tensor_size);
+        errdefer allocator.free(tensor_data);
+
+        @memset(tensor_data, 0.0);
+
+        // Create tensor struct directly
+        var tensor_shape = try allocator.alloc(usize, 2);
+        errdefer allocator.free(tensor_shape);
+        tensor_shape[0] = rows;
+        tensor_shape[1] = cols;
+
+        var strides = try allocator.alloc(usize, 2);
+        errdefer allocator.free(strides);
+        strides[0] = cols;
+        strides[1] = 1;
+
+        return Tensor{
+            .data = tensor_data,
+            .shape = tensor_shape,
+            .strides = strides,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn onesTensor(allocator: std.mem.Allocator, rows: usize, cols: usize) !Tensor {
+        const tensor_size = rows * cols;
+
+        const tensor_data: []f32 = try allocator.alloc(f32, tensor_size);
+        errdefer allocator.free(tensor_data);
+
+        @memset(tensor_data, 1.0);
+
+        // Create tensor struct directly
+        var tensor_shape = try allocator.alloc(usize, 2);
+        errdefer allocator.free(tensor_shape);
+        tensor_shape[0] = rows;
+        tensor_shape[1] = cols;
+
+        var strides = try allocator.alloc(usize, 2);
+        errdefer allocator.free(strides);
+        strides[0] = cols;
+        strides[1] = 1;
 
         return Tensor{
             .data = tensor_data,
@@ -97,6 +164,31 @@ pub const Tensor = struct {
 
         // Create new tensor
         return Tensor.initTensor(self.allocator, self.shape[0], self.shape[1], new_data);
+    }
+
+    // adds a col of ones, used in regression for intercept calculation
+    pub fn addOnesColumn(self: *Tensor) !void {
+        const new_size = self.shape[0] * (self.shape[1] + 1);
+        var new_data = try self.allocator.alloc(f32, new_size);
+
+        const old_stride = self.strides[0]; // stride between rows
+        const new_stride = old_stride + 1; // new stride with added column
+
+        var i: usize = 0;
+        while (i < self.shape[0]) : (i += 1) {
+            // Set the leading 1
+            new_data[i * new_stride] = 1.0;
+
+            // Copy the rest of the row
+            const old_row_start = i * old_stride;
+            const new_row_start = i * new_stride + 1; // +1 to skip the 1 we just added
+            @memcpy(new_data[new_row_start .. new_row_start + old_stride], self.data[old_row_start .. old_row_start + old_stride]);
+        }
+
+        self.allocator.free(self.data);
+        self.data = new_data;
+        self.shape[1] += 1;
+        self.strides[0] = new_stride;
     }
 
     // gets the value at the row/col passed, helper function for Gauss Jordan
@@ -272,10 +364,10 @@ pub const Tensor = struct {
         const round_error = 1e-3; // Add small round_error for floating point comparison
 
         var cloned_tensor: Tensor = try initTensor(self.allocator, n, n, self.data);
-        errdefer cloned_tensor.deinit();
+        errdefer cloned_tensor.deinitTensor();
 
         var identity_matrix: Tensor = try self.initIdentityMatrix();
-        errdefer identity_matrix.deinit();
+        errdefer identity_matrix.deinitTensor();
 
         // Forward elimination
         for (0..n) |i| {
@@ -343,7 +435,7 @@ pub const Tensor = struct {
             }
         }
 
-        cloned_tensor.deinit();
+        cloned_tensor.deinitTensor();
         return identity_matrix;
     }
 
@@ -402,105 +494,5 @@ pub const Tensor = struct {
         for (0..self.shape[0]) |i| {
             dest[i] += tmp[i];
         }
-    }
-
-    //////////////////// ML /////////////////////
-    pub fn mean(T: Tensor) f32 {
-        const n: f32 = @as(f32, @floatFromInt(T.data.len));
-        var sum: f32 = 0.0;
-
-        for (T.data) |val| {
-            sum += val;
-        }
-        return sum / n;
-    }
-
-    // Calculates r^2 given Y_A -> actual y val & Y_P -> predicted y val
-    pub fn rSquared(Y_A: Tensor, Y_P: Tensor) f32 {
-        var SSR: f32 = 0.0;
-        var SST: f32 = 0.0;
-        const M: f32 = mean(Y_A);
-
-        for (0..Y_A.data.len) |i| {
-            SSR += (Y_A.data[i] - Y_P.data[i]) * (Y_A.data[i] - Y_P.data[i]);
-            SST += (Y_A.data[i] - M) * (Y_A.data[i] - M);
-        }
-
-        return (1 - (SSR / SST));
-    }
-
-    // Calculates MSE given Y_A -> actual y val & Y_P -> Predicted y val
-    pub fn mse(Y_A: Tensor, Y_P: Tensor) f32 {
-        var sum: f32 = 0.0;
-        const n: f32 = @as(f32, @floatFromInt(Y_A.data.len));
-
-        for (0..Y_A.data.len) |idx| {
-            const val: f32 = Y_A.data[idx] - Y_P.data[idx];
-            sum += (val * val);
-        }
-
-        return sum / n;
-    }
-
-    // Calculates RMSE given Y_A -> actual y val & Y_P -> Predicted y val
-    pub fn rmse(Y_A: Tensor, Y_P: Tensor) f32 {
-        var sum: f32 = 0.0;
-        const n: f32 = @as(f32, @floatFromInt(Y_A.data.len));
-
-        for (0..Y_A.data.len) |idx| {
-            const val: f32 = Y_A.data[idx] - Y_P.data[idx];
-            sum += (val * val);
-        }
-
-        return std.math.sqrt(sum / n);
-    }
-
-    // Calculates MAE given Y_A -> actual y val & Y_P -> Predicted y val
-    pub fn mae(Y_A: Tensor, Y_P: Tensor) f32 {
-        const n: f32 = @as(f32, @floatFromInt(Y_A.data.len));
-        var sum: f32 = 0.0;
-
-        for (0..Y_A.data.len) |idx| {
-            const val: f32 = Y_A.data[idx] - Y_P.data[idx];
-            sum += (val * val);
-        }
-
-        return @abs(sum / n);
-    }
-
-    // OLS
-    pub fn linearRegression(X: Tensor, Y: Tensor) !RegressionResult {
-        // Calculate beta = (X^T X)^-1 X^T Y
-        var X_C: Tensor = try Tensor.initTensor(X.allocator, X.shape[0], X.shape[1], X.data);
-
-        // First transpose
-        var X_T: Tensor = try X_C.transpose();
-
-        // .matmul updates X_T in place
-        try X_T.matmul(X_C);
-        var beta: Tensor = try X_T.inverseVector();
-
-        // Clear X_T and set it to transposed again since it was modified above
-        X_T.deinit();
-
-        X_T = try X_C.transpose();
-
-        try beta.matmul(X_T);
-        try beta.matmul(Y);
-
-        try X_C.matmul(beta);
-
-        // Clean up
-        beta.deinit();
-        X_T.deinit();
-        defer X_C.deinit();
-
-        return RegressionResult{
-            .r_squared = rSquared(Y, X_C),
-            .mse = mse(Y, X_C),
-            .mae = mae(Y, X_C),
-            .rmse = rmse(Y, X_C),
-            .predictions = X_C.data,
-        };
     }
 };

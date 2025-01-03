@@ -2,7 +2,7 @@ const std = @import("std");
 const tensor_file = @import("tensor.zig");
 const Tensor = tensor_file.Tensor;
 
-pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn, InvalidDropAllColumns, InvalidFileType };
+pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn, InvalidDropAllColumns, InvalidFileType, CannotConvertStringToFloat };
 
 const HeaderEntry = struct {
     header: []const u8,
@@ -336,6 +336,9 @@ pub const Table = struct {
     // Returns a new Table that is subset of input table containing filtered rows
     pub fn filterTable(self: *Table, allocator: std.mem.Allocator, cols: []const []const u8) !Table {
         if (cols.len == 0 or cols.len > self.headers.count()) {
+            const err = error.InvalidColumn;
+
+            std.debug.print("Error occured: {!} of table with shape {d}{d}\n", .{ err, self.headers.count(), self.body.items.len });
             return TableError.InvalidColumn;
         }
 
@@ -346,6 +349,9 @@ pub const Table = struct {
         // Iterate through passed array and fill in hashmap
         for (cols) |col| {
             if (!self.headerExists(col)) {
+                const err = error.InvalidColumn;
+
+                std.debug.print("Error occured: {!} of table with shape {d} X {d}, column: {s} DNE\n", .{ err, self.headers.count(), self.body.items.len, col });
                 return TableError.InvalidColumn;
             }
             const colIdx = try self.getHeaderIdx(col);
@@ -493,7 +499,26 @@ pub const Table = struct {
         }
     }
 
-    // @TODO
-    // Converts table to a matrix for matrix operations
-    //pub fn toMatrix(self: *Table) !Matrix {}
+    // Converts table to a tensor for matrix operations
+    pub fn tableToTensor(self: *Table) !Tensor {
+        // Allocate flat array for tensor data
+        const rows = self.body.items.len;
+        const cols = self.headers.count();
+        var flat_data = try self.allocator.alloc(f32, rows * cols);
+
+        // Convert each DataPoint to f32
+        for (self.body.items, 0..) |row, i| {
+            for (row.items, 0..) |value, j| {
+                flat_data[i * cols + j] = switch (value) {
+                    .Float => |f| f,
+                    .Int => |n| @floatFromInt(n),
+                    .String => {
+                        return TableError.CannotConvertStringToFloat;
+                    },
+                };
+            }
+        }
+        defer self.allocator.free(flat_data);
+        return Tensor.initTensor(self.allocator, rows, cols, flat_data);
+    }
 };
