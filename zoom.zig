@@ -21,7 +21,6 @@ pub const DataFrame = struct {
 
     pub fn init(allocator: std.mem.Allocator) !DataFrame {
         const table = Table{
-            .source_data = null,
             .allocator = allocator,
             .body = std.ArrayListAligned(std.ArrayList(DataPoint), null).init(allocator),
             .headers = std.StringHashMap(usize).init(allocator),

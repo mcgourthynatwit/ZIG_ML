@@ -17,7 +17,6 @@ pub const DataPoint = union(enum) {
 
 // @TODO adjust Table & add enum to handle floats
 pub const Table = struct {
-    source_data: ?[]const u8,
     allocator: std.mem.Allocator,
     body: std.ArrayList(std.ArrayList(DataPoint)),
     headers: std.StringHashMap(usize),
@@ -25,7 +24,6 @@ pub const Table = struct {
     // Creates empty Table struct
     pub fn initTable(allocator: std.mem.Allocator) Table {
         return Table{
-            .source_data = null,
             .allocator = allocator,
             .body = std.ArrayList(std.ArrayList(DataPoint)).init(allocator),
             .headers = std.StringHashMap(usize).init(allocator),
@@ -33,44 +31,25 @@ pub const Table = struct {
     }
 
     pub fn deinitTable(self: *Table) void {
-        // For original that holds buffer in source_data
-        if (self.source_data) |data| {
-            self.allocator.free(data);
-
-            // Header & Data are slices of source_data, just need to free the ArrayList not the individual strings
-            var header_it = self.headers.iterator();
-            while (header_it.next()) |entry| {
-                _ = entry;
-            }
-            self.headers.deinit();
-
-            for (self.body.items) |*row| {
-                row.deinit();
-            }
-            self.body.deinit();
+        var header_it = self.headers.iterator();
+        while (header_it.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
         }
-        // For filtered that are duplicates in different memory then original, need to individaully free header and body strings
-        else {
-            var header_it = self.headers.iterator();
-            while (header_it.next()) |entry| {
-                // Free the header strings
-                self.allocator.free(entry.key_ptr.*);
-            }
-            self.headers.deinit();
+        self.headers.deinit();
 
-            for (self.body.items) |*row| {
-                for (row.items) |data_point| {
-                    switch (data_point) {
-                        // For String variants, we need to free the string
-                        .String => |str| self.allocator.free(str),
-                        // Other variants don't need explicit deallocation
-                        .Float, .Int => {},
-                    }
+        // Free row data
+        for (self.body.items) |*row| {
+            for (row.items) |data_point| {
+                switch (data_point) {
+                    // Free string variants
+                    .String => |str| self.allocator.free(str),
+                    // Numeric types don't need explicit deallocation
+                    .Float, .Int => {},
                 }
-                row.deinit();
             }
-            self.body.deinit();
+            row.deinit();
         }
+        self.body.deinit();
     }
 
     fn verifyFileType(file_name: []const u8) bool {
@@ -111,11 +90,6 @@ pub const Table = struct {
             return;
         }
 
-        if (self.source_data) |old_data| {
-            self.allocator.free(old_data);
-            self.source_data = null;
-        }
-
         // Create buf allocating the file size bytes
         const buffer = try self.allocator.alloc(u8, file_size);
 
@@ -124,7 +98,6 @@ pub const Table = struct {
 
         std.debug.assert(bytes_read == file_size);
 
-        self.source_data = buffer;
         errdefer self.allocator.free(buffer);
 
         // parse CSV
@@ -134,7 +107,11 @@ pub const Table = struct {
     // Add header to table
     fn addHeader(self: *Table, header: []const u8) !void {
         const index = self.headers.count();
-        try self.headers.put(header, index);
+
+        const owned_header = try self.allocator.dupe(u8, header);
+        errdefer self.allocator.free(owned_header);
+
+        try self.headers.put(owned_header, index);
     }
 
     // Helper for parse()
@@ -142,15 +119,15 @@ pub const Table = struct {
     fn parseHeader(self: *Table, header_line: []const u8) !void {
         var header_items = std.mem.split(u8, header_line, ",");
         self.headers.clearAndFree();
+
         while (header_items.next()) |item| {
             // Trim any unecessary text
             const trimmed_item = std.mem.trim(u8, item, " \r\n");
-
             try self.addHeader(trimmed_item);
         }
     }
 
-    fn parseDatapoint(str: []const u8) !DataPoint {
+    fn parseDatapoint(str: []const u8, strBuffer: []u8) !DataPoint {
         if (std.fmt.parseFloat(f32, str)) |float_val| {
             return DataPoint{ .Float = float_val };
         } else |_| {
@@ -159,7 +136,8 @@ pub const Table = struct {
                 return DataPoint{ .Int = int_val };
             } else |_| {
                 // If both fail, return as string
-                return DataPoint{ .String = str };
+                @memcpy(strBuffer[0..str.len], str);
+                return DataPoint{ .String = strBuffer[0..str.len] };
             }
         }
     }
@@ -192,9 +170,12 @@ pub const Table = struct {
         const estimated_rows = csv_data.len / (num_cols * 7);
         try self.body.ensureTotalCapacity(estimated_rows);
 
-        // Store row data that will be appended onto self.body
+        // preallocated row buffer
         var row = try std.ArrayList(DataPoint).initCapacity(self.allocator, num_cols);
         defer row.deinit();
+
+        // preallocated cell buffer for strings (1024 chars)
+        const cell_buffer = try self.allocator.alloc(u8, 1024);
 
         // Skip past header and newline
         ptr_1 = ptr_2 + 1;
@@ -204,13 +185,13 @@ pub const Table = struct {
         while (ptr_2 < csv_data.len) {
             if (csv_data[ptr_2] == ',') {
                 if (ptr_2 > ptr_1) {
-                    const cellDataPoint = try parseDatapoint(csv_data[ptr_1..ptr_2]);
+                    const cellDataPoint = try parseDatapoint(csv_data[ptr_1..ptr_2], cell_buffer);
                     try row.append(cellDataPoint);
                 }
                 ptr_1 = ptr_2 + 1; // Skip past the comma
             } else if (csv_data[ptr_2] == '\n') {
                 if (ptr_2 > ptr_1) {
-                    const cellDataPoint = try parseDatapoint(csv_data[ptr_1..ptr_2]);
+                    const cellDataPoint = try parseDatapoint(csv_data[ptr_1..ptr_2], cell_buffer);
                     try row.append(cellDataPoint);
                 }
                 if (row.items.len > 0) {
@@ -224,7 +205,7 @@ pub const Table = struct {
 
         // Handle last row if it doesn't end with a newline
         if (ptr_2 > ptr_1) {
-            const cellDataPoint = try parseDatapoint(csv_data[ptr_1..ptr_2]);
+            const cellDataPoint = try parseDatapoint(csv_data[ptr_1..ptr_2], cell_buffer);
             try row.append(cellDataPoint);
             try self.body.append(try row.clone());
         }
