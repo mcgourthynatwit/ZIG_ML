@@ -228,14 +228,10 @@ pub const Table = struct {
         }
     }
 
-    fn splitLine(self: *Table, line: []u8) ![][]u8 {
+    fn splitLine(line: []u8, cells: [][]u8, expected_cols: usize) ![][]u8 {
         var cell_count: usize = 0;
         var cell_start: usize = 0;
         var in_quote: bool = false;
-
-        // Allocate array of slices instead of u8
-        const expected_cols = self.columns.count() + self.column_start;
-        var cells = try self.allocator.alloc([]u8, expected_cols);
 
         for (line, 0..) |char, idx| {
             if (char == '"') {
@@ -288,12 +284,32 @@ pub const Table = struct {
         }
     }
 
-    fn parseLine(self: *Table, line: []u8) !void {
-        const cells = try self.splitLine(line);
+    fn parseLine(self: *Table, line: []u8, cells_arr: [][]u8, expected_cols: usize) !void {
+        const cells = try splitLine(line, cells_arr, expected_cols);
 
         try self.appendCells(cells);
 
         return;
+    }
+
+    fn calculateMemory(self: *Table) !f64 {
+        var total_bytes: usize = 0;
+        var col_it = self.columns.iterator();
+        while (col_it.next()) |entry| {
+            switch (entry.value_ptr.data) {
+                .Float => |list| total_bytes += list.items.len * @sizeOf(f32),
+                .Int => |list| total_bytes += list.items.len * @sizeOf(i32),
+                .String => |list| {
+                    // For strings, count both array capacity and actual string contents
+                    total_bytes += list.items.len * @sizeOf([]const u8);
+                    for (list.items) |str| {
+                        total_bytes += str.len;
+                    }
+                },
+            }
+        }
+        const memory_mb = @as(f64, @floatFromInt(total_bytes)) / (1024 * 1024);
+        return memory_mb;
     }
 
     fn parseBody(self: *Table, estimated_rows: usize, file_name: []const u8) !void {
@@ -307,23 +323,30 @@ pub const Table = struct {
         var buffered_reader = std.io.bufferedReader(file.reader());
         var reader = buffered_reader.reader();
 
-        var buf: [1024]u8 = undefined;
+        var buf: [1024 * 1024]u8 = undefined;
         _ = try reader.readUntilDelimiter(&buf, '\n');
         var i: usize = 0;
+
+        const expected_cols = self.columns.count() + self.column_start;
+
+        const cells_arr = try self.allocator.alloc([]u8, expected_cols);
+        defer self.allocator.free(cells_arr);
 
         while (try reader.readUntilDelimiterOrEof(&buf, '\n')) |line| {
             const line_copy = try self.allocator.dupe(u8, line);
 
-            try self.parseLine(line_copy);
+            try self.parseLine(line_copy, cells_arr, expected_cols);
             i += 1;
         }
 
         const end_time = std.time.nanoTimestamp();
         const elapsed_nanos = end_time - start_time;
         const elapsed_s = @as(f64, @floatFromInt(elapsed_nanos)) / 1_000_000_000.0;
+        const memory_mb: f64 = try self.calculateMemory();
 
         std.debug.print("Lines read: {any}\n", .{i});
         std.debug.print("Time taken: {d:.3}s\n", .{elapsed_s});
+        std.debug.print("Memory used: {d:.2}MB\n", .{memory_mb});
     }
 
     pub fn head(self: *Table) !void {
