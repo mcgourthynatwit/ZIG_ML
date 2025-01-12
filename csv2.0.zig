@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn, InvalidDropAllColumns, InvalidFileType, CannotConvertStringToFloat };
+const ParseError = error{MismatchLen};
 const SchemaError = error{ NoHeaders, InvalidFormat, NoData };
 
 pub const Column = union(enum) {
@@ -214,20 +215,151 @@ pub const Table = struct {
         }
     }
 
-    fn parseBody(self: *Table, estimated_rows: usize) !void {
+    fn initCols(self: *Table, estimated_rows: usize) !void {
         var col_it = self.columns.iterator();
-        while (col_it.next()) |entry| {
-            std.debug.print("Processing column: {s}\n", .{entry.key_ptr.*});
 
-            // Update the column data directly
+        while (col_it.next()) |entry| {
+            // Init col arrays
             entry.value_ptr.data = switch (entry.value_ptr.data) {
                 .Float => .{ .Float = try std.ArrayList(f32).initCapacity(self.allocator, estimated_rows) },
                 .Int => .{ .Int = try std.ArrayList(i32).initCapacity(self.allocator, estimated_rows) },
                 .String => .{ .String = try std.ArrayList([]const u8).initCapacity(self.allocator, estimated_rows) },
             };
         }
+    }
 
-        self.len = estimated_rows;
+    fn splitLine(self: *Table, line: []u8) ![][]u8 {
+        var cell_count: usize = 0;
+        var cell_start: usize = 0;
+        var in_quote: bool = false;
+
+        // Allocate array of slices instead of u8
+        const expected_cols = self.columns.count() + self.column_start;
+        var cells = try self.allocator.alloc([]u8, expected_cols);
+
+        for (line, 0..) |char, idx| {
+            if (char == '"') {
+                in_quote = !in_quote;
+            } else if (char == ',' and !in_quote) {
+                cells[cell_count] = line[cell_start..idx];
+                cell_count += 1;
+                cell_start = idx + 1;
+            }
+        }
+
+        if (cell_start < line.len) {
+            cells[cell_count] = line[cell_start..];
+            cell_count += 1;
+        }
+
+        if (cell_count != expected_cols) {
+            std.debug.print("Expected {any} cols, found {any} cols", .{ expected_cols, cell_count });
+            return ParseError.MismatchLen;
+        }
+        return cells;
+    }
+
+    fn appendCells(self: *Table, cells: [][]u8) !void {
+        var i: usize = self.column_start;
+
+        for (cells) |cell| {
+            if (self.indexToName.get(i)) |col_name| {
+                if (self.columns.getPtr(col_name)) |col_info| {
+                    // Parse and append based on column type
+                    switch (col_info.data) {
+                        .Float => |*list| {
+                            const trimmed = std.mem.trim(u8, cell, " ");
+                            const value = try std.fmt.parseFloat(f32, trimmed);
+                            try list.append(value);
+                        },
+                        .Int => |*list| {
+                            const trimmed = std.mem.trim(u8, cell, " ");
+                            const value = try std.fmt.parseInt(i32, trimmed, 10);
+                            try list.append(value);
+                        },
+                        .String => |*list| {
+                            const trimmed = std.mem.trim(u8, cell, " ");
+                            try list.append(trimmed);
+                        },
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+
+    fn parseLine(self: *Table, line: []u8) !void {
+        const cells = try self.splitLine(line);
+
+        try self.appendCells(cells);
+
+        return;
+    }
+
+    fn parseBody(self: *Table, estimated_rows: usize, file_name: []const u8) !void {
+        const start_time = std.time.nanoTimestamp();
+
+        try self.initCols(estimated_rows);
+
+        const file = try std.fs.cwd().openFile(file_name, .{});
+        defer file.close();
+
+        var buffered_reader = std.io.bufferedReader(file.reader());
+        var reader = buffered_reader.reader();
+
+        var buf: [1024]u8 = undefined;
+        _ = try reader.readUntilDelimiter(&buf, '\n');
+        var i: usize = 0;
+
+        while (try reader.readUntilDelimiterOrEof(&buf, '\n')) |line| {
+            const line_copy = try self.allocator.dupe(u8, line);
+
+            try self.parseLine(line_copy);
+            i += 1;
+        }
+
+        const end_time = std.time.nanoTimestamp();
+        const elapsed_nanos = end_time - start_time;
+        const elapsed_s = @as(f64, @floatFromInt(elapsed_nanos)) / 1_000_000_000.0;
+
+        std.debug.print("Lines read: {any}\n", .{i});
+        std.debug.print("Time taken: {d:.3}s\n", .{elapsed_s});
+    }
+
+    pub fn head(self: *Table) !void {
+        var i: usize = self.column_start;
+        while (self.indexToName.get(i)) |col_name| {
+            std.debug.print("{s}\t", .{col_name});
+            i += 1;
+        }
+        std.debug.print("\n", .{});
+
+        for (0..5) |row| {
+            i = self.column_start;
+            while (self.indexToName.get(i)) |col_name| {
+                if (self.columns.get(col_name)) |col_info| {
+                    switch (col_info.data) {
+                        .Float => |list| {
+                            if (row < list.items.len) {
+                                std.debug.print("{d}\t", .{list.items[row]});
+                            }
+                        },
+                        .Int => |list| {
+                            if (row < list.items.len) {
+                                std.debug.print("{d}\t", .{list.items[row]});
+                            }
+                        },
+                        .String => |list| {
+                            if (row < list.items.len) {
+                                std.debug.print("{s}\t", .{list.items[row]});
+                            }
+                        },
+                    }
+                }
+                i += 1;
+            }
+            std.debug.print("\n", .{});
+        }
     }
 
     pub fn readCsv(allocator: std.mem.Allocator, file_name: []const u8) !Table {
@@ -250,10 +382,6 @@ pub const Table = struct {
             return TableError.InvalidFileType;
         }
 
-        // Get total bytes of file
-
-        // const file_size = try file.getEndPos();
-
         var buffered_reader = std.io.bufferedReader(file.reader());
         var reader = buffered_reader.reader();
 
@@ -262,8 +390,8 @@ pub const Table = struct {
         defer table.allocator.free(read_buffer);
 
         const estimated_rows: usize = try table.analyzeSchema(&reader, read_buffer);
-        //std.debug.print("{any}", .{estimated_rows});
-        try table.parseBody(estimated_rows);
+
+        try table.parseBody(estimated_rows, file_name);
         return table;
     }
 };
