@@ -228,7 +228,7 @@ pub const Table = struct {
         }
     }
 
-    fn splitLine(line: []u8, cells: [][]u8, expected_cols: usize, col_start_idx: usize) ![][]u8 {
+    fn splitAndAppendLine(self: *Table, line: []u8, expected_cols: usize, col_start_idx: usize) !void {
         var cell_count: usize = 0; // tracks total cells seen
         var cell_start: usize = 0;
         var cells_stored: usize = 0; // tracks cells actually stored
@@ -240,7 +240,7 @@ pub const Table = struct {
             } else if (char == ',' and !in_quote) {
                 // if a target col then we add
                 if (cell_count >= col_start_idx) {
-                    cells[cells_stored] = line[cell_start..idx];
+                    try self.appendCell(line[cell_start..idx], cell_count);
                     cells_stored += 1;
                 }
                 cell_count += 1;
@@ -251,7 +251,7 @@ pub const Table = struct {
         // Handle last cell
         if (cell_start < line.len) {
             if (cell_count >= col_start_idx) {
-                cells[cells_stored] = line[cell_start..];
+                try self.appendCell(line[cell_start..], cell_count);
                 cells_stored += 1;
             }
             cell_count += 1;
@@ -261,43 +261,34 @@ pub const Table = struct {
             std.debug.print("Expected {any} cols, found {any} cols", .{ expected_cols, cell_count });
             return ParseError.MismatchLen;
         }
-
-        return cells[0..cells_stored];
     }
 
-    fn appendCells(self: *Table, cells: [][]u8) !void {
-        var i: usize = self.column_start;
-
-        for (cells) |cell| {
-            if (self.indexToName.get(i)) |col_name| {
-                if (self.columns.getPtr(col_name)) |col_info| {
-                    // Parse and append based on column type
-                    switch (col_info.data) {
-                        .Float => |*list| {
-                            const trimmed = std.mem.trim(u8, cell, " ");
-                            const value = try std.fmt.parseFloat(f32, trimmed);
-                            try list.append(value);
-                        },
-                        .Int => |*list| {
-                            const trimmed = std.mem.trim(u8, cell, " ");
-                            const value = try std.fmt.parseInt(i32, trimmed, 10);
-                            try list.append(value);
-                        },
-                        .String => |*list| {
-                            const trimmed = std.mem.trim(u8, cell, " ");
-                            try list.append(trimmed);
-                        },
-                    }
+    fn appendCell(self: *Table, cell: []u8, col_idx: usize) !void {
+        if (self.indexToName.get(col_idx)) |col_name| {
+            if (self.columns.getPtr(col_name)) |col_info| {
+                // Parse and append based on column type
+                switch (col_info.data) {
+                    .Float => |*list| {
+                        const trimmed = std.mem.trim(u8, cell, " ");
+                        const value = try std.fmt.parseFloat(f32, trimmed);
+                        try list.append(value);
+                    },
+                    .Int => |*list| {
+                        const trimmed = std.mem.trim(u8, cell, " ");
+                        const value = try std.fmt.parseInt(i32, trimmed, 10);
+                        try list.append(value);
+                    },
+                    .String => |*list| {
+                        const trimmed = std.mem.trim(u8, cell, " ");
+                        try list.append(trimmed);
+                    },
                 }
             }
-            i += 1;
         }
     }
 
-    fn parseLine(self: *Table, line: []u8, cells_arr: [][]u8, expected_cols: usize) !void {
-        const cells = try splitLine(line, cells_arr, expected_cols, self.column_start);
-
-        try self.appendCells(cells);
+    fn parseLine(self: *Table, line: []u8, expected_cols: usize) !void {
+        try self.splitAndAppendLine(line, expected_cols, self.column_start);
 
         return;
     }
@@ -339,13 +330,10 @@ pub const Table = struct {
 
         const expected_cols = self.columns.count() + self.column_start;
 
-        const cells_arr = try self.allocator.alloc([]u8, expected_cols);
-        defer self.allocator.free(cells_arr);
-
         while (try reader.readUntilDelimiterOrEof(&buf, '\n')) |line| {
             const line_copy = try self.allocator.dupe(u8, line);
 
-            try self.parseLine(line_copy, cells_arr, expected_cols);
+            try self.parseLine(line_copy, expected_cols);
             i += 1;
         }
 
