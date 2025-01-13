@@ -228,23 +228,32 @@ pub const Table = struct {
         }
     }
 
-    fn splitLine(line: []u8, cells: [][]u8, expected_cols: usize) ![][]u8 {
-        var cell_count: usize = 0;
+    fn splitLine(line: []u8, cells: [][]u8, expected_cols: usize, col_start_idx: usize) ![][]u8 {
+        var cell_count: usize = 0; // tracks total cells seen
         var cell_start: usize = 0;
+        var cells_stored: usize = 0; // tracks cells actually stored
         var in_quote: bool = false;
 
         for (line, 0..) |char, idx| {
             if (char == '"') {
                 in_quote = !in_quote;
             } else if (char == ',' and !in_quote) {
-                cells[cell_count] = line[cell_start..idx];
+                // if a target col then we add
+                if (cell_count >= col_start_idx) {
+                    cells[cells_stored] = line[cell_start..idx];
+                    cells_stored += 1;
+                }
                 cell_count += 1;
                 cell_start = idx + 1;
             }
         }
 
+        // Handle last cell
         if (cell_start < line.len) {
-            cells[cell_count] = line[cell_start..];
+            if (cell_count >= col_start_idx) {
+                cells[cells_stored] = line[cell_start..];
+                cells_stored += 1;
+            }
             cell_count += 1;
         }
 
@@ -252,7 +261,8 @@ pub const Table = struct {
             std.debug.print("Expected {any} cols, found {any} cols", .{ expected_cols, cell_count });
             return ParseError.MismatchLen;
         }
-        return cells;
+
+        return cells[0..cells_stored];
     }
 
     fn appendCells(self: *Table, cells: [][]u8) !void {
@@ -285,7 +295,7 @@ pub const Table = struct {
     }
 
     fn parseLine(self: *Table, line: []u8, cells_arr: [][]u8, expected_cols: usize) !void {
-        const cells = try splitLine(line, cells_arr, expected_cols);
+        const cells = try splitLine(line, cells_arr, expected_cols, self.column_start);
 
         try self.appendCells(cells);
 
@@ -385,9 +395,10 @@ pub const Table = struct {
         }
     }
 
-    pub fn readCsv(allocator: std.mem.Allocator, file_name: []const u8) !Table {
+    pub fn readCsv(file_name: []const u8) !Table {
         const file = try std.fs.cwd().openFile(file_name, .{});
-
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        const allocator: std.mem.Allocator = arena.allocator();
         defer file.close();
 
         var table = Table{
