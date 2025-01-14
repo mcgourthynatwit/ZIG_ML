@@ -431,6 +431,33 @@ pub const Table = struct {
         }
     }
 
+    pub fn printCols(self: *Table) !void {
+        var i: usize = self.column_start;
+
+        while (self.indexToName.get(i)) |col_name| {
+            std.debug.print("{s}\n", .{col_name});
+            i += 1;
+        }
+    }
+
+    pub fn shape(self: *Table) !void {
+        const num_cols: usize = self.columns.count();
+        const first_col = self.indexToName.get(self.column_start) orelse {
+            return error.NoColumns;
+        };
+
+        const col_info = self.columns.get(first_col) orelse {
+            return error.ColumnNotFound;
+        };
+
+        const num_rows: usize = switch (col_info.data) {
+            .Int => |arr| arr.items.len,
+            .Float => |arr| arr.items.len,
+            .String => |arr| arr.items.len,
+        };
+        std.debug.print("{} columns x {} rows\n", .{ num_cols, num_rows });
+    }
+
     pub fn readCsv(file_name: []const u8) !Table {
         const file = try std.fs.cwd().openFile(file_name, .{});
         var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
