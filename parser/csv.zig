@@ -1,8 +1,8 @@
 const std = @import("std");
 const verifyFileType = @import("utils/verifyFile.zig").verifyFileType;
-const determineType = @import("utils/type.zig").determineType;
 const calculateMemory = @import("utils/performance.zig").calculateMemory;
 const calculateTime = @import("utils/performance.zig").measureElapsedTime;
+
 const CsvParser = @import("utils/csv_parser.zig");
 
 pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn, InvalidDropAllColumns, InvalidFileType, CannotConvertStringToFloat };
@@ -24,6 +24,11 @@ pub const ColumnType = enum {
 pub const ColumnInfo = struct {
     data: Column,
     index: usize,
+};
+
+const BufferConfig = struct {
+    const BUFFER_SIZE: comptime_int = 8092 * 1024;
+    const READ_BUFFER_SIZE: comptime_int = 1024 * 8192;
 };
 
 pub const Table = struct {
@@ -53,71 +58,11 @@ pub const Table = struct {
     }
 
     fn getHeaderNames(self: *Table, reader: anytype, buffer: []u8) ![]const u8 {
-        var bytes_read = try reader.read(buffer);
-        if (bytes_read == 0) {
-            return SchemaError.NoHeaders;
-        }
+        const result = try CsvParser.getHeaderData(self.allocator, buffer, reader);
 
-        // find end of line
-        var header_data = std.ArrayList(u8).init(self.allocator);
-        defer header_data.deinit();
+        try CsvParser.saveColumnNames(self, result.header_data);
 
-        var found_newline = false;
-        var pos: usize = 0;
-        var remaining_buffer: []const u8 = &.{};
-
-        while (!found_newline) {
-            while (pos < bytes_read) {
-                if (buffer[pos] == '\n') {
-                    found_newline = true;
-                    remaining_buffer = buffer[pos + 1 .. bytes_read];
-                    break;
-                }
-                pos += 1;
-            }
-
-            // header longer then buffer
-            try header_data.appendSlice(buffer[0..pos]);
-
-            if (!found_newline) {
-                bytes_read = try reader.read(buffer);
-
-                if (bytes_read == 0) {
-                    if (header_data.items.len > 0) {
-                        break;
-                    }
-                    return SchemaError.InvalidFormat;
-                }
-
-                pos = 0;
-            }
-        }
-
-        var header_iter = std.mem.split(u8, header_data.items, ",");
-        var col_index: usize = 0;
-
-        while (header_iter.next()) |header| {
-            const trimmed = std.mem.trim(u8, header, " \r");
-            const owned_header = try self.allocator.dupe(u8, trimmed);
-            errdefer self.allocator.free(owned_header);
-
-            if (trimmed.len == 0) {
-                col_index += 1;
-                self.column_start = 1;
-                continue;
-            }
-
-            const col_info = ColumnInfo{
-                .data = undefined,
-                .index = col_index,
-            };
-            try self.indexToName.put(col_index, owned_header);
-            try self.columns.put(owned_header, col_info);
-
-            col_index += 1;
-        }
-
-        return remaining_buffer;
+        return result.remaining_buffer;
     }
 
     fn getColumnDtype(self: *Table, reader: anytype, buffer: []u8) !usize {
@@ -141,8 +86,9 @@ pub const Table = struct {
 
         var found_newline = false;
         var pos: usize = 0;
-        var first_row_size: usize = 0; // used to estimate num rows
+        var first_row_size: usize = 0;
 
+        // Get first line data
         while (!found_newline) {
             while (pos < bytes_read) {
                 if (buffer[pos] == '\n') {
@@ -165,30 +111,7 @@ pub const Table = struct {
             }
         }
 
-        var col_index: usize = self.column_start;
-
-        var cell_iter = std.mem.split(u8, line_data.items, ",");
-
-        // skip index if exists
-        if (col_index == 1) {
-            _ = cell_iter.next();
-        }
-
-        while (cell_iter.next()) |cell| {
-            const trimmed = std.mem.trim(u8, cell, " \r");
-            const col_type = try determineType(trimmed);
-            if (self.indexToName.get(col_index)) |col_name| {
-                if (self.columns.getPtr(col_name)) |col| {
-                    col.data = switch (col_type) {
-                        .Float => .{ .Float = std.ArrayList(f32).init(self.allocator) },
-                        .Int => .{ .Int = std.ArrayList(i32).init(self.allocator) },
-                        .String => .{ .String = std.ArrayList([]const u8).init(self.allocator) },
-                    };
-                }
-            }
-
-            col_index += 1;
-        }
+        try CsvParser.saveColumnDtype(self, line_data);
 
         // estimate num rows
         const estimated_rows = self.file_size / first_row_size;
@@ -208,7 +131,7 @@ pub const Table = struct {
         }
     }
 
-    fn parseLine(self: *Table, line: []u8, expected_cols: usize) !void {
+    inline fn parseLine(self: *Table, line: []u8, expected_cols: usize) !void {
         try CsvParser.splitAndAppendLine(self, line, expected_cols, self.column_start);
 
         return;
@@ -224,8 +147,7 @@ pub const Table = struct {
         var buffered_reader = std.io.bufferedReader(file.reader());
         var reader = buffered_reader.reader();
 
-        const buffer_size: usize = 8092 * 1024;
-        var buf = try self.allocator.alignedAlloc(u8, @alignOf(u8), buffer_size);
+        var buf = try self.allocator.alignedAlloc(u8, @alignOf(u8), BufferConfig.BUFFER_SIZE);
         defer self.allocator.free(buf);
 
         var remaining = std.ArrayListAligned(u8, @alignOf(u8)).init(self.allocator);
