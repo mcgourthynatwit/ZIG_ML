@@ -1,8 +1,8 @@
 const std = @import("std");
 
 pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn, InvalidDropAllColumns, InvalidFileType, CannotConvertStringToFloat };
-const ParseError = error{MismatchLen};
-const SchemaError = error{ NoHeaders, InvalidFormat, NoData };
+pub const ParseError = error{MismatchLen};
+pub const SchemaError = error{ NoHeaders, InvalidFormat, NoData };
 
 pub const Column = union(enum) {
     Float: std.ArrayList(f32),
@@ -94,6 +94,9 @@ pub const Table = struct {
                 bytes_read = try reader.read(buffer);
 
                 if (bytes_read == 0) {
+                    if (header_data.items.len > 0) {
+                        break;
+                    }
                     return SchemaError.InvalidFormat;
                 }
 
@@ -136,8 +139,9 @@ pub const Table = struct {
         if (bytes_read == 0) {
             bytes_read = try reader.read(buffer);
 
+            // file has no rows
             if (bytes_read == 0) {
-                return SchemaError.NoData;
+                return 0;
             }
 
             remaining_buffer = buffer[0..bytes_read];
@@ -331,7 +335,15 @@ pub const Table = struct {
         defer remaining.deinit();
 
         // Skip header
-        _ = try reader.readUntilDelimiter(buf, '\n');
+        if (reader.readUntilDelimiter(buf, '\n')) |_| {
+            // Header was read successfully, continue with body
+        } else |err| {
+            // This is fine just means there's no body (no \n char on header line)
+            if (err == error.EndOfStream) {
+                return;
+            }
+            return err;
+        }
 
         var i: usize = 0;
         const expected_cols = self.columns.count() + self.column_start;
