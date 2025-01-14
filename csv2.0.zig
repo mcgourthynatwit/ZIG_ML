@@ -315,7 +315,6 @@ pub const Table = struct {
 
     fn parseBody(self: *Table, estimated_rows: usize, file_name: []const u8) !void {
         const start_time = std.time.nanoTimestamp();
-
         try self.initCols(estimated_rows);
 
         const file = try std.fs.cwd().openFile(file_name, .{});
@@ -324,15 +323,52 @@ pub const Table = struct {
         var buffered_reader = std.io.bufferedReader(file.reader());
         var reader = buffered_reader.reader();
 
-        var buf: [1024 * 1024]u8 = undefined;
-        _ = try reader.readUntilDelimiter(&buf, '\n');
-        var i: usize = 0;
+        const buffer_size: usize = 8092 * 1024;
+        var buf = try self.allocator.alignedAlloc(u8, @alignOf(u8), buffer_size);
+        defer self.allocator.free(buf);
 
+        var remaining = std.ArrayListAligned(u8, @alignOf(u8)).init(self.allocator);
+        defer remaining.deinit();
+
+        // Skip header
+        _ = try reader.readUntilDelimiter(buf, '\n');
+
+        var i: usize = 0;
         const expected_cols = self.columns.count() + self.column_start;
 
-        while (try reader.readUntilDelimiterOrEof(&buf, '\n')) |line| {
-            const line_copy = try self.allocator.dupe(u8, line);
+        while (true) {
+            const bytes_read = try reader.read(buf);
+            if (bytes_read == 0) break;
 
+            var chunk = buf[0..bytes_read];
+            var start: usize = 0;
+
+            if (remaining.items.len > 0) {
+                // Append new chunk to remaining data
+                try remaining.appendSlice(chunk);
+                chunk = remaining.items;
+            }
+
+            while (std.mem.indexOfScalar(u8, chunk[start..], '\n')) |end| {
+                const line = chunk[start .. start + end];
+                const line_copy = try self.allocator.dupe(u8, line);
+                try self.parseLine(line_copy, expected_cols);
+                start += end + 1;
+                i += 1;
+            }
+
+            // Handle remaining data
+            if (start < chunk.len) {
+                remaining.clearRetainingCapacity();
+                try remaining.appendSlice(chunk[start..]);
+            } else {
+                remaining.clearRetainingCapacity();
+            }
+        }
+
+        // Handle any final remaining data
+        if (remaining.items.len > 0) {
+            const line_copy = try self.allocator.dupe(u8, remaining.items);
             try self.parseLine(line_copy, expected_cols);
             i += 1;
         }
@@ -407,7 +443,7 @@ pub const Table = struct {
         var buffered_reader = std.io.bufferedReader(file.reader());
         var reader = buffered_reader.reader();
 
-        const buffer_size = 1024 * 1024;
+        const buffer_size = 1024 * 8192;
         const read_buffer = try table.allocator.alloc(u8, buffer_size);
         defer table.allocator.free(read_buffer);
 
