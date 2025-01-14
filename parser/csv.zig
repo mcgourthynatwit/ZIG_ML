@@ -1,4 +1,9 @@
 const std = @import("std");
+const verifyFileType = @import("utils/verifyFile.zig").verifyFileType;
+const determineType = @import("utils/type.zig").determineType;
+const calculateMemory = @import("utils/performance.zig").calculateMemory;
+const calculateTime = @import("utils/performance.zig").measureElapsedTime;
+const CsvParser = @import("utils/csv_parser.zig");
 
 pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn, InvalidDropAllColumns, InvalidFileType, CannotConvertStringToFloat };
 pub const ParseError = error{MismatchLen};
@@ -28,22 +33,6 @@ pub const Table = struct {
     allocator: std.mem.Allocator,
     len: usize,
     file_size: usize,
-
-    fn verifyFileType(file_name: []const u8) bool {
-        const extension_index = std.mem.lastIndexOf(u8, file_name, ".");
-
-        if (extension_index == null) {
-            return false;
-        }
-
-        const extension = file_name[extension_index.?..];
-
-        if (!std.mem.eql(u8, extension, ".csv")) {
-            return false;
-        }
-
-        return true;
-    }
 
     pub fn deinit(self: *Table) void {
         var col_it = self.columns.iterator();
@@ -206,19 +195,6 @@ pub const Table = struct {
         return estimated_rows;
     }
 
-    fn determineType(value: []const u8) !ColumnType {
-        // int
-        if (std.fmt.parseInt(i32, value, 10)) |_| {
-            return .Int;
-        } else |_| {
-            if (std.fmt.parseFloat(f32, value)) |_| {
-                return .Float;
-            } else |_| {
-                return .String;
-            }
-        }
-    }
-
     fn initCols(self: *Table, estimated_rows: usize) !void {
         var col_it = self.columns.iterator();
 
@@ -232,89 +208,10 @@ pub const Table = struct {
         }
     }
 
-    fn splitAndAppendLine(self: *Table, line: []u8, expected_cols: usize, col_start_idx: usize) !void {
-        var cell_count: usize = 0; // tracks total cells seen
-        var cell_start: usize = 0;
-        var cells_stored: usize = 0; // tracks cells actually stored
-        var in_quote: bool = false;
-
-        for (line, 0..) |char, idx| {
-            if (char == '"') {
-                in_quote = !in_quote;
-            } else if (char == ',' and !in_quote) {
-                // if a target col then we add
-                if (cell_count >= col_start_idx) {
-                    try self.appendCell(line[cell_start..idx], cell_count);
-                    cells_stored += 1;
-                }
-                cell_count += 1;
-                cell_start = idx + 1;
-            }
-        }
-
-        // Handle last cell
-        if (cell_start < line.len) {
-            if (cell_count >= col_start_idx) {
-                try self.appendCell(line[cell_start..], cell_count);
-                cells_stored += 1;
-            }
-            cell_count += 1;
-        }
-
-        if (cell_count != expected_cols) {
-            std.debug.print("Expected {any} cols, found {any} cols", .{ expected_cols, cell_count });
-            return ParseError.MismatchLen;
-        }
-    }
-
-    fn appendCell(self: *Table, cell: []u8, col_idx: usize) !void {
-        if (self.indexToName.get(col_idx)) |col_name| {
-            if (self.columns.getPtr(col_name)) |col_info| {
-                // Parse and append based on column type
-                switch (col_info.data) {
-                    .Float => |*list| {
-                        const trimmed = std.mem.trim(u8, cell, " ");
-                        const value = try std.fmt.parseFloat(f32, trimmed);
-                        try list.append(value);
-                    },
-                    .Int => |*list| {
-                        const trimmed = std.mem.trim(u8, cell, " ");
-                        const value = try std.fmt.parseInt(i32, trimmed, 10);
-                        try list.append(value);
-                    },
-                    .String => |*list| {
-                        const trimmed = std.mem.trim(u8, cell, " ");
-                        try list.append(trimmed);
-                    },
-                }
-            }
-        }
-    }
-
     fn parseLine(self: *Table, line: []u8, expected_cols: usize) !void {
-        try self.splitAndAppendLine(line, expected_cols, self.column_start);
+        try CsvParser.splitAndAppendLine(self, line, expected_cols, self.column_start);
 
         return;
-    }
-
-    fn calculateMemory(self: *Table) !f64 {
-        var total_bytes: usize = 0;
-        var col_it = self.columns.iterator();
-        while (col_it.next()) |entry| {
-            switch (entry.value_ptr.data) {
-                .Float => |list| total_bytes += list.items.len * @sizeOf(f32),
-                .Int => |list| total_bytes += list.items.len * @sizeOf(i32),
-                .String => |list| {
-                    // For strings, count both array capacity and actual string contents
-                    total_bytes += list.items.len * @sizeOf([]const u8);
-                    for (list.items) |str| {
-                        total_bytes += str.len;
-                    }
-                },
-            }
-        }
-        const memory_mb = @as(f64, @floatFromInt(total_bytes)) / (1024 * 1024);
-        return memory_mb;
     }
 
     fn parseBody(self: *Table, estimated_rows: usize, file_name: []const u8) !void {
@@ -385,10 +282,8 @@ pub const Table = struct {
             i += 1;
         }
 
-        const end_time = std.time.nanoTimestamp();
-        const elapsed_nanos = end_time - start_time;
-        const elapsed_s = @as(f64, @floatFromInt(elapsed_nanos)) / 1_000_000_000.0;
-        const memory_mb: f64 = try self.calculateMemory();
+        const elapsed_s = calculateTime(start_time);
+        const memory_mb: f64 = try calculateMemory(self);
 
         std.debug.print("Lines read: {any}\n", .{i});
         std.debug.print("Time taken: {d:.3}s\n", .{elapsed_s});

@@ -1,8 +1,8 @@
 const std = @import("std");
 const expect = std.testing.expect;
-const Table = @import("csv.zig").Table;
-const TableError = @import("csv.zig").TableError;
-const SchemaError = @import("csv.zig").SchemaError;
+const Table = @import("parser/csv.zig").Table;
+const TableError = @import("parser/csv.zig").TableError;
+const SchemaError = @import("parser/csv.zig").SchemaError;
 
 //////////////////// CSV /////////////////////
 test "parse_empty_csv" {
