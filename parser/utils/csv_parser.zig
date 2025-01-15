@@ -3,6 +3,7 @@ const Table = @import("../csv.zig").Table;
 const ParseError = @import("../csv.zig").ParseError;
 const SchemaError = @import("../csv.zig").SchemaError;
 const ColumnInfo = @import("../csv.zig").ColumnInfo;
+const StringPool = @import("../csv.zig").StringPool;
 const determineType = @import("type.zig").determineType;
 
 pub inline fn splitAndAppendLine(self: *Table, line: []u8, expected_cols: usize, col_start_idx: usize) !void {
@@ -12,16 +13,23 @@ pub inline fn splitAndAppendLine(self: *Table, line: []u8, expected_cols: usize,
     var in_quote: bool = false;
 
     for (line, 0..) |char, idx| {
-        if (char == '"') {
-            in_quote = !in_quote;
-        } else if (char == ',' and !in_quote) {
-            // if a target col then we add
-            if (cell_count >= col_start_idx) {
-                try appendCell(self, line[cell_start..idx], cell_count);
-                cells_stored += 1;
-            }
-            cell_count += 1;
-            cell_start = idx + 1;
+        switch (char) {
+            '"' => {
+                in_quote = !in_quote;
+            },
+            ',' => {
+                if (!in_quote) {
+                    if (cell_count >= col_start_idx) {
+                        try appendCell(self, line[cell_start..idx], cell_count);
+                        cells_stored += 1;
+                    }
+                    cell_count += 1;
+                    cell_start = idx + 1;
+                }
+            },
+            else => {
+                continue;
+            },
         }
     }
 
@@ -46,7 +54,8 @@ pub inline fn appendCell(self: *Table, cell: []u8, col_idx: usize) !void {
             // Parse and append based on column type
 
             const trimmed = std.mem.trim(u8, cell, " ");
-            try col_info.data.append(trimmed);
+            const string_id = try col_info.stringPool.getOrCreate(trimmed);
+            try col_info.data.append(string_id);
         }
     }
 }
@@ -113,9 +122,12 @@ pub fn saveColumnNames(self: *Table, header_data: std.ArrayList(u8)) !void {
         }
 
         const col_info = ColumnInfo{
-            .data = undefined,
+            .stringPool = StringPool.init(self.allocator),
+            .data = std.ArrayList(u32).init(self.allocator),
             .index = col_index,
+            .col_type = .String,
         };
+
         try self.indexToName.put(col_index, owned_header);
         try self.columns.put(owned_header, col_info);
 
@@ -123,7 +135,8 @@ pub fn saveColumnNames(self: *Table, header_data: std.ArrayList(u8)) !void {
     }
 }
 
-pub fn saveColumnDtype(self: *Table, line_data: std.ArrayList(u8)) !void {
+pub fn saveColumnDtype(self: *Table, line_data: std.ArrayList(u8), estimated_rows: usize) !void {
+    std.debug.print("{any}", .{estimated_rows});
     var col_index: usize = self.column_start;
 
     var cell_iter = std.mem.split(u8, line_data.items, ",");
@@ -136,7 +149,8 @@ pub fn saveColumnDtype(self: *Table, line_data: std.ArrayList(u8)) !void {
     while (cell_iter.next()) |_| {
         if (self.indexToName.get(col_index)) |col_name| {
             if (self.columns.getPtr(col_name)) |col| {
-                col.data = std.ArrayList([]const u8).init(self.allocator);
+                try col.data.ensureUnusedCapacity(estimated_rows);
+                col.col_type = .String;
             }
         }
 
