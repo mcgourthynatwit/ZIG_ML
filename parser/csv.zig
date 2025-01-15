@@ -9,12 +9,6 @@ pub const TableError = error{ MissingHeader, OutOfMemory, InvalidColumn, Invalid
 pub const ParseError = error{MismatchLen};
 pub const SchemaError = error{ NoHeaders, InvalidFormat, NoData };
 
-pub const Column = union(enum) {
-    Float: std.ArrayList(f32),
-    Int: std.ArrayList(i32),
-    String: std.ArrayList([]const u8),
-};
-
 pub const ColumnType = enum {
     Float,
     Int,
@@ -22,7 +16,7 @@ pub const ColumnType = enum {
 };
 
 pub const ColumnInfo = struct {
-    data: Column,
+    data: std.ArrayList([]const u8),
     index: usize,
 };
 
@@ -32,9 +26,9 @@ const BufferConfig = struct {
 };
 
 pub const Table = struct {
-    column_start: usize, // which col starts current implementation ignores index so this is either 0(no idx) or 1
+    column_start: usize,
     columns: std.StringHashMap(ColumnInfo),
-    indexToName: std.AutoHashMap(usize, []const u8), // maps col idx to name
+    indexToName: std.AutoHashMap(usize, []const u8),
     allocator: std.mem.Allocator,
     len: usize,
     file_size: usize,
@@ -42,11 +36,7 @@ pub const Table = struct {
     pub fn deinit(self: *Table) void {
         var col_it = self.columns.iterator();
         while (col_it.next()) |entry| {
-            switch (entry.value_ptr.data) {
-                .Float => |*list| list.deinit(),
-                .Int => |*list| list.deinit(),
-                .String => |*list| list.deinit(),
-            }
+            entry.value_ptr.data.deinit();
         }
         self.columns.deinit();
         self.indexToName.deinit();
@@ -123,11 +113,7 @@ pub const Table = struct {
 
         while (col_it.next()) |entry| {
             // Init col arrays
-            entry.value_ptr.data = switch (entry.value_ptr.data) {
-                .Float => .{ .Float = try std.ArrayList(f32).initCapacity(self.allocator, estimated_rows) },
-                .Int => .{ .Int = try std.ArrayList(i32).initCapacity(self.allocator, estimated_rows) },
-                .String => .{ .String = try std.ArrayList([]const u8).initCapacity(self.allocator, estimated_rows) },
-            };
+            entry.value_ptr.data = try std.ArrayList([]const u8).initCapacity(self.allocator, estimated_rows);
         }
     }
 
@@ -224,22 +210,8 @@ pub const Table = struct {
             i = self.column_start;
             while (self.indexToName.get(i)) |col_name| {
                 if (self.columns.get(col_name)) |col_info| {
-                    switch (col_info.data) {
-                        .Float => |list| {
-                            if (row < list.items.len) {
-                                std.debug.print("{d}\t", .{list.items[row]});
-                            }
-                        },
-                        .Int => |list| {
-                            if (row < list.items.len) {
-                                std.debug.print("{d}\t", .{list.items[row]});
-                            }
-                        },
-                        .String => |list| {
-                            if (row < list.items.len) {
-                                std.debug.print("{s}\t", .{list.items[row]});
-                            }
-                        },
+                    if (row < col_info.data.items.len) {
+                        std.debug.print("{s}\t", .{col_info.data.items[row]});
                     }
                 }
                 i += 1;

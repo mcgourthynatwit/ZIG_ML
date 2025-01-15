@@ -44,22 +44,9 @@ pub inline fn appendCell(self: *Table, cell: []u8, col_idx: usize) !void {
     if (self.indexToName.get(col_idx)) |col_name| {
         if (self.columns.getPtr(col_name)) |col_info| {
             // Parse and append based on column type
-            switch (col_info.data) {
-                .Float => |*list| {
-                    const trimmed = std.mem.trim(u8, cell, " ");
-                    const value = try std.fmt.parseFloat(f32, trimmed);
-                    try list.append(value);
-                },
-                .Int => |*list| {
-                    const trimmed = std.mem.trim(u8, cell, " ");
-                    const value = try std.fmt.parseInt(i32, trimmed, 10);
-                    try list.append(value);
-                },
-                .String => |*list| {
-                    const trimmed = std.mem.trim(u8, cell, " ");
-                    try list.append(trimmed);
-                },
-            }
+
+            const trimmed = std.mem.trim(u8, cell, " ");
+            try col_info.data.append(trimmed);
         }
     }
 }
@@ -146,16 +133,10 @@ pub fn saveColumnDtype(self: *Table, line_data: std.ArrayList(u8)) !void {
         _ = cell_iter.next();
     }
 
-    while (cell_iter.next()) |cell| {
-        const trimmed = std.mem.trim(u8, cell, " \r");
-        const col_type = try determineType(trimmed);
+    while (cell_iter.next()) |_| {
         if (self.indexToName.get(col_index)) |col_name| {
             if (self.columns.getPtr(col_name)) |col| {
-                col.data = switch (col_type) {
-                    .Float => .{ .Float = std.ArrayList(f32).init(self.allocator) },
-                    .Int => .{ .Int = std.ArrayList(i32).init(self.allocator) },
-                    .String => .{ .String = std.ArrayList([]const u8).init(self.allocator) },
-                };
+                col.data = std.ArrayList([]const u8).init(self.allocator);
             }
         }
 
